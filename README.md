@@ -1,0 +1,1 @@
+# AlphaCoders-ARM-Bharat-AI-SoC-2027-MotorSense
