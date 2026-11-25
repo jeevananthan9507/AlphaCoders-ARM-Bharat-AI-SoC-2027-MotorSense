@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MotorSense — Context-Aware Predictive Maintenance Digital Twin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --abyss:#050B14; --panel:#0B1720; --panel-2:#0F1E29; --line:#1B2E3A;
+    --cyan:#00E5C7; --cyan-dim:rgba(0,229,199,0.18);
+    --amber:#F2B84B; --violet:#B98CFF; --sky:#5AC8FA; --orange:#FF7A45; --red:#FF4D4D; --green:#22D36B;
+    --ink:#DCEFF2; --ink-dim:#83A0AA; --ink-faint:#4C6570;
+    --font-display:'Space Grotesk', system-ui, sans-serif;
+    --font-body:'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--abyss); color:var(--ink); font-family:var(--font-body); overflow:hidden; }
+
+  /* ---------- Top App Navigation Bar ---------- */
+  #topbar{
+    position:fixed; top:0; left:0; right:0; height:52px; z-index:40;
+    background:rgba(5,11,20,0.92); border-bottom:1px solid var(--line);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    display:flex; align-items:center; justify-content:space-between; padding:0 1.25rem;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; font-family:var(--font-display); font-weight:700; letter-spacing:0.02em; font-size:1.12rem; }
+  .brand-dot{ width:9px; height:9px; border-radius:50%; background:var(--cyan); box-shadow:0 0 10px 2px var(--cyan-dim); flex-shrink:0; }
+  .brand small{ font-family:var(--font-mono); font-weight:400; font-size:0.72rem; color:var(--ink-dim); margin-left:6px; border-left:1px solid var(--line); padding-left:10px; }
+
+  .tab-bar{ display:flex; gap:6px; background:var(--panel); border:1px solid var(--line); padding:4px; }
+  .tab-btn{
+    font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-dim); background:transparent;
+    border:1px solid transparent; padding:5px 14px; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:7px;
+  }
+  .tab-btn:hover{ color:var(--ink); }
+  .tab-btn.active{ color:#04121a; background:var(--cyan); border-color:var(--cyan); font-weight:600; }
+  .tab-badge{ font-size:0.68rem; padding:1px 5px; background:rgba(0,0,0,0.22); border-radius:2px; }
+
+  .status-pill{ display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:0.76rem; color:var(--ink-dim); }
+  .status-pill .pulse{ width:7px; height:7px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:pulse 2.2s infinite; }
+  .status-pill.warn .pulse{ background:var(--amber); box-shadow:0 0 8px var(--amber); }
+  .status-pill.crit .pulse{ background:var(--red); box-shadow:0 0 8px var(--red); }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
+
+  /* ---------- Tab Views ---------- */
+  .view-tab{ position:fixed; top:52px; left:0; right:0; bottom:0; display:none; }
+  .view-tab.active{ display:block; }
+
+  /* =====================================================================
+     TAB 1: 3D DIGITAL TWIN STAGE
+     ===================================================================== */
+  #stage{ position:absolute; inset:0; overflow:hidden; background:#050b12; font-size:clamp(12px, calc(0.52vw + 5.5px), 17px); }
+  #gl{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+  #gl.dragging{ cursor:grabbing; }
+  #vignette{ position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at 50% 46%, transparent 56%, rgba(2,6,10,0.55) 100%); }
+
+  #leaders{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  #leaders line{ stroke:var(--cyan); stroke-width:1; opacity:0; transition:opacity .3s; }
+  #leaders circle{ fill:var(--cyan); opacity:0; transition:opacity .3s; }
+  #leaders line.on, #leaders circle.on{ opacity:.85; }
+  #labels{ position:absolute; inset:0; pointer-events:none; }
+  .lbl{
+    position:absolute; left:0; top:0; opacity:0; transition:opacity .3s;
+    background:rgba(5,11,20,0.86); border:1px solid var(--line); border-left:2px solid var(--cyan);
+    padding:0.38em 0.7em; white-space:nowrap; will-change:transform;
+  }
+  .lbl.on{ opacity:1; }
+  .lbl b{ display:block; font-family:var(--font-display); font-weight:600; font-size:0.92em; color:var(--ink); }
+  .lbl span{ display:block; font-family:var(--font-mono); font-size:0.75em; color:var(--ink-dim); margin-top:1px; }
+  .lbl.warn{ border-left-color:var(--amber); }
+  .lbl.crit{ border-left-color:var(--red); }
+
+  #ui{ position:absolute; inset:0; pointer-events:none; }
+  #ui .hit{ pointer-events:auto; }
+  .panel{
+    background:rgba(9,20,28,0.86); border:1px solid var(--line); padding:0.65em 0.8em;
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  }
+  .panel h3{ margin:0; font-family:var(--font-display); font-weight:600; font-size:0.98em; display:flex; justify-content:space-between; align-items:center; }
+  .panel .note{ font-family:var(--font-mono); font-size:0.74em; color:var(--ink-faint); margin-top:2px; }
+  .panel canvas{ display:block; width:100%; height:auto; margin-top:0.55em; border:1px solid var(--line); background:#071018; }
+
+  /* Left Edge Log & Context Box */
+  #leftCol{ position:absolute; left:1.2em; top:1em; width:min(22.5em, 31%); display:flex; flex-direction:column; gap:0.65em; }
+  .ctx-grid{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:0.5em; }
+  .ctx-box{ border:1px solid var(--line); padding:0.42em 0.55em; background:rgba(5,11,20,0.55); }
+  .ctx-box .k{ font-family:var(--font-mono); font-size:0.7em; color:var(--ink-dim); }
+  .ctx-box .v{ font-family:var(--font-mono); font-size:1.05em; font-weight:600; color:var(--ink); margin-top:2px; }
+
+  #feed ul{ list-style:none; margin:0.5em 0 0; padding:0; font-family:var(--font-mono); font-size:0.75em; max-height:11.5em; overflow:hidden; }
+  #feed li{ display:flex; gap:8px; align-items:center; padding:4px 0; border-top:1px solid var(--line); color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #feed li:first-child{ border-top:none; }
+  #feed li .dot{ width:7px; height:7px; border-radius:50%; background:var(--cyan); flex-shrink:0; }
+  #feed li.warn .dot{ background:var(--amber); }
+  #feed li.crit .dot{ background:var(--red); }
+  #feed li b{ color:var(--ink); font-weight:500; }
+
+  /* Right Telemetry & FFT Panels */
+  #panels{ position:absolute; right:1.2em; top:1em; width:min(22.5em, 32%); display:flex; flex-direction:column; gap:0.65em; }
+  .tiles{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:0.5em; }
+  .tile{ border:1px solid var(--line); padding:0.45em 0.55em; background:rgba(5,11,20,0.45); transition:border-color .25s; }
+  .tile.warn{ border-color:var(--amber); }
+  .tile.crit{ border-color:var(--red); }
+  .tile .l{ font-size:0.73em; color:var(--ink-dim); }
+  .tile .v{ font-family:var(--font-mono); font-size:1.22em; color:var(--ink); line-height:1.25; }
+  .tile .v small{ font-size:0.58em; color:var(--ink-faint); margin-left:2px; }
+  .tile canvas{ margin-top:3px; height:22px; border:none; background:none; }
+
+  .readout{ display:flex; justify-content:space-between; margin-top:0.45em; font-family:var(--font-mono); font-size:0.76em; color:var(--ink-dim); }
+  .readout b{ color:var(--cyan); font-weight:500; }
+
+  /* Caption & Camera Walkthrough */
+  #caption{
+    position:absolute; left:1.2em; bottom:6.8em; max-width:min(28em, 38%); padding:0.15em 0 0.15em 0.85em;
+    border-left:3px solid var(--cyan); transition:opacity .22s, transform .22s;
+  }
+  #caption.swap{ opacity:0; transform:translateY(5px); }
+  #caption .step{ font-family:var(--font-mono); font-size:0.73em; color:var(--ink-faint); }
+  #caption h2{ margin:0.12em 0 0.2em; font-family:var(--font-display); font-weight:600; font-size:1.55em; line-height:1.12; }
+  #caption p{ margin:0; color:var(--ink-dim); font-size:0.92em; line-height:1.45; }
+  #caption .view{ margin-top:0.4em; font-family:var(--font-mono); font-size:0.75em; color:var(--cyan); }
+
+  /* Bottom Control Dock */
+  #dock{
+    position:absolute; left:50%; bottom:0.9em; transform:translateX(-50%);
+    display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
+    gap:0.5em 0.7em; max-width:97%; padding:0.5em 0.75em;
+  }
+  #dock .sep{ width:1px; align-self:stretch; background:var(--line); }
+  .seg{ display:flex; }
+  .seg button{ margin-left:-1px; }
+  .btn, .seg button, .chipbtn, select.ctl-sel{
+    font-family:var(--font-mono); font-size:0.78em; color:var(--ink-dim); background:rgba(5,11,20,0.82);
+    border:1px solid var(--line); padding:0.45em 0.75em; cursor:pointer; transition:all .15s;
+  }
+  .btn:hover, .seg button:hover, .chipbtn:hover, select.ctl-sel:hover{ color:var(--ink); border-color:var(--ink-faint); }
+  .seg button.active{ color:var(--cyan); border-color:var(--cyan); background:rgba(0,229,199,0.09); position:relative; z-index:1; }
+  .btn.primary{ color:#04121a; background:var(--cyan); border-color:var(--cyan); font-weight:600; }
+  .btn.primary:hover{ background:#33f0d6; }
+  .btn.amber{ color:#04121a; background:var(--amber); border-color:var(--amber); font-weight:600; }
+  .btn.sq{ padding:0.45em 0.65em; }
+  .chipbtn.on{ color:var(--ink); border-color:var(--cyan); }
+  .ctl{ display:flex; align-items:center; gap:0.45em; font-family:var(--font-mono); font-size:0.76em; color:var(--ink-faint); }
+  .ctl output{ color:var(--ink-dim); min-width:3.8em; }
+  .ctl input[type="range"]{ width:5.5em; accent-color:var(--cyan); }
+  .dots{ display:flex; gap:4px; }
+  .dots i{ width:6px; height:6px; border-radius:50%; background:var(--line); }
+  .dots i.on{ background:var(--cyan); }
+
+  #tourBar{ position:absolute; left:0; top:0; height:3px; width:0; background:var(--cyan); opacity:0; transition:opacity .3s; z-index:20; }
+  #tourBar.on{ opacity:1; }
+  #toast{
+    position:fixed; left:50%; top:64px; transform:translate(-50%,-10px); z-index:60;
+    background:rgba(5,11,20,0.94); border:1px solid var(--cyan); padding:0.5em 1em;
+    font-family:var(--font-mono); font-size:0.8rem; color:var(--ink); opacity:0; transition:all .25s; pointer-events:none;
+  }
+  #toast.on{ opacity:1; transform:translate(-50%,0); }
+
+  /* =====================================================================
+     TAB 2: DATA STORE, PREDICTIVE ANALYTICS & MAINTENANCE SCHEDULER
+     ===================================================================== */
+  #tab2{ overflow-y:auto; background:var(--abyss); padding:1.4rem 1.8rem 3rem; }
+  .t2-wrap{ max-width:1380px; margin:0 auto; display:flex; flex-direction:column; gap:1.25rem; }
+
+  .t2-header{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:1rem; border-bottom:1px solid var(--line); padding-bottom:0.9rem; }
+  .t2-header h1{ margin:0; font-family:var(--font-display); font-size:1.55rem; font-weight:600; }
+  .t2-header p{ margin:4px 0 0; color:var(--ink-dim); font-size:0.9rem; }
+  .t2-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+
+  .kpi-row{ display:grid; grid-template-columns:repeat(4, 1fr); gap:1rem; }
+  .kpi-card{ background:var(--panel); border:1px solid var(--line); padding:1rem 1.15rem; position:relative; }
+  .kpi-card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--cyan); }
+  .kpi-card.warn::before{ background:var(--amber); }
+  .kpi-card.crit::before{ background:var(--red); }
+  .kpi-card .lbl-k{ font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-dim); text-transform:uppercase; letter-spacing:0.04em; }
+  .kpi-card .val-k{ font-family:var(--font-display); font-size:1.95rem; font-weight:700; margin:6px 0 4px; color:var(--ink); }
+  .kpi-card .sub-k{ font-family:var(--font-mono); font-size:0.76rem; color:var(--ink-dim); }
+
+  .t2-grid{ display:grid; grid-template-columns:390px 1fr; gap:1.25rem; align-items:start; }
+  .card{ background:var(--panel); border:1px solid var(--line); padding:1.15rem 1.25rem; }
+  .card h2{ margin:0 0 4px; font-family:var(--font-display); font-size:1.12rem; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+  .card .sub{ font-family:var(--font-mono); font-size:0.75rem; color:var(--ink-dim); margin-bottom:1rem; }
+
+  .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; }
+  .field{ display:flex; flex-direction:column; gap:4px; }
+  .field.full{ grid-column:1 / -1; }
+  .field label{ font-family:var(--font-mono); font-size:0.73rem; color:var(--ink-dim); }
+  .field input, .field select{
+    background:#060E16; border:1px solid var(--line); color:var(--ink);
+    font-family:var(--font-mono); font-size:0.84rem; padding:7px 9px; outline:none;
+  }
+  .field input:focus, .field select:focus{ border-color:var(--cyan); }
+  .preset-row{ display:flex; flex-wrap:wrap; gap:6px; margin:0.85rem 0; }
+  .preset-btn{ font-family:var(--font-mono); font-size:0.72rem; padding:4px 8px; background:var(--panel-2); border:1px solid var(--line); color:var(--ink-dim); cursor:pointer; }
+  .preset-btn:hover{ border-color:var(--cyan); color:var(--ink); }
+
+  .diag-box{ border:1px solid var(--line); background:#07111A; padding:0.9rem 1rem; margin-bottom:1rem; }
+  .diag-banner{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .badge-st{ font-family:var(--font-mono); font-size:0.76rem; font-weight:600; padding:3px 9px; letter-spacing:0.04em; }
+  .badge-st.NORMAL{ background:rgba(34,211,107,0.16); color:var(--green); border:1px solid var(--green); }
+  .badge-st.WARNING{ background:rgba(242,184,75,0.16); color:var(--amber); border:1px solid var(--amber); }
+  .badge-st.CRITICAL{ background:rgba(255,77,77,0.18); color:var(--red); border:1px solid var(--red); }
+
+  .diag-summary{ font-size:0.92rem; line-height:1.5; color:var(--ink); margin:0 0 0.75rem; }
+  .req-list{ margin:0; padding-left:1.1rem; font-size:0.86rem; color:var(--ink-dim); line-height:1.55; }
+  .req-list li strong{ color:var(--ink); }
+
+  .chart-wrap{ border:1px solid var(--line); background:#071018; padding:0.65rem; margin-top:0.75rem; }
+  .chart-wrap canvas{ width:100%; height:220px; display:block; }
+
+  .tbl-wrap{ overflow-x:auto; border:1px solid var(--line); max-height:330px; overflow-y:auto; }
+  table{ width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:0.78rem; }
+  th, td{ padding:8px 10px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th{ background:var(--panel-2); color:var(--ink-dim); position:sticky; top:0; z-index:2; font-weight:500; }
+  tr:hover td{ background:rgba(0,229,199,0.04); }
+  .del-btn{ background:none; border:1px solid var(--line); color:var(--ink-faint); font-family:var(--font-mono); font-size:0.72rem; padding:2px 6px; cursor:pointer; }
+  .del-btn:hover{ border-color:var(--red); color:var(--red); }
+
+  @media (max-width:1050px){
+    .t2-grid{ grid-template-columns:1fr; }
+    .kpi-row{ grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:760px){
+    #leftCol, #panels{ display:none; }
+    .kpi-row{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    <span>MotorSense</span>
+    <small>Raspberry Pi 4B/5 Edge SBC · Context-Aware Predictive Maintenance</small>
+  </div>
+
+  <nav class="tab-bar" role="tablist">
+    <button class="tab-btn active" id="navTab1" role="tab" aria-selected="true">
+      <span>01 · 3D Digital Twin</span>
+    </button>
+    <button class="tab-btn" id="navTab2" role="tab" aria-selected="false">
+      <span>02 · Data Store &amp; Repair Schedule</span>
+      <span class="tab-badge" id="logCountBadge">0</span>
+    </button>
+  </nav>
+
+  <div class="status-pill" id="globalPill">
+    <span class="pulse"></span>
+    <span id="globalPillText">NORMAL · BASELINE MATCHED</span>
+  </div>
+</header>
+
+<div id="toast"></div>
+
+<!-- =======================================================================
+     TAB 1: 3D DIGITAL TWIN WALKTHROUGH
+     ======================================================================= -->
+<main id="tab1" class="view-tab active">
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <div id="vignette"></div>
+    <svg id="leaders" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="labels"></div>
+    <div id="tourBar"></div>
+
+    <div id="ui">
+      <!-- Left Column: Context-Aware Classifier & Edge Log -->
+      <div id="leftCol">
+        <section class="panel">
+          <h3>Context-Aware Classifier <span id="ctxStateTag" style="color:var(--cyan);font-family:var(--font-mono);font-size:0.78em;">NORMAL</span></h3>
+          <div class="note">Distinguishes heavy load from true mechanical faults</div>
+          <div class="ctx-grid">
+            <div class="ctx-box"><div class="k">OPERATING REGIME</div><div class="v" id="ctxRegime">MED LOAD · 1480 RPM</div></div>
+            <div class="ctx-box"><div class="k">BASELINE Z-SCORE</div><div class="v" id="ctxZScore">0.42 σ</div></div>
+            <div class="ctx-box"><div class="k">KURTOSIS (IMPULSE)</div><div class="v" id="ctxKurt">3.05</div></div>
+            <div class="ctx-box"><div class="k">MOTOR HEALTH SCORE</div><div class="v" id="ctxHealth">98.4 %</div></div>
+          </div>
+          <div class="readout"><span>Expected Healthy RMS: <b id="ctxBaseRms">2.10 mm/s</b></span><span>Actual RMS: <b id="ctxActRms">2.14 mm/s</b></span></div>
+        </section>
+
+        <section class="panel" id="feed">
+          <h3>Raspberry Pi Edge Log <span style="font-family:var(--font-mono);font-size:0.72em;color:var(--ink-faint);">OFFLINE READY</span></h3>
+          <div class="note">Adaptive anomaly decisions &amp; persistent drift tracking</div>
+          <ul id="feedList"></ul>
+        </section>
+      </div>
+
+      <!-- Right Column: FFT Spectrum + 4-Sensor Telemetry -->
+      <div id="panels">
+        <section class="panel" id="pFft">
+          <h3>Vibration FFT vs Learned Baseline</h3>
+          <div class="note">ADXL1002 MEMS · 1024-pt FFT (cyan = live, dashed = learned)</div>
+          <canvas id="cvFft" width="640" height="250"></canvas>
+          <div class="readout"><span>1× Shaft: <b id="rd1x">24.7 Hz</b></span><span>Peak Amp: <b id="rdPeak">2.95 mm/s</b></span></div>
+        </section>
+
+        <section class="panel" id="pTele">
+          <h3>Multi-Sensor Telemetry</h3>
+          <div class="note">Live acquisition via Raspberry Pi SPI, I2C &amp; GPIO</div>
+          <div class="tiles">
+            <div class="tile" id="tlVib"><div class="l">Vibration RMS</div><div class="v"><span id="vVib">2.14</span><small>mm/s</small></div><canvas id="skVib" width="200" height="44"></canvas></div>
+            <div class="tile" id="tlCur"><div class="l">Hall Current</div><div class="v"><span id="vCur">14.8</span><small>A</small></div><canvas id="skCur" width="200" height="44"></canvas></div>
+            <div class="tile" id="tlRpm"><div class="l">Shaft Speed</div><div class="v"><span id="vRpm">1480</span><small>RPM</small></div><canvas id="skRpm" width="200" height="44"></canvas></div>
+            <div class="tile" id="tlTemp"><div class="l">Bearing Temp</div><div class="v"><span id="vTemp">52.4</span><small>°C</small></div><canvas id="skTemp" width="200" height="44"></canvas></div>
+          </div>
+          <div class="readout"><span>Next Service Est: <b id="rdRul">1,420 hrs (59 days)</b></span></div>
+        </section>
+      </div>
+
+      <!-- Bottom-Left Camera Walkthrough Caption -->
+      <div id="caption">
+        <div class="step" id="capStep"></div>
+        <h2 id="capTitle"></h2>
+        <p id="capText"></p>
+        <div class="view" id="capView"></div>
+      </div>
+
+      <!-- Bottom Interactive Dock -->
+      <div id="dock" class="panel hit">
+        <div class="seg" id="chapterSeg"></div>
+        <span class="sep"></span>
+        <button class="btn primary" id="btnTour">Play tour</button>
+        <div class="ctl"><button class="btn sq" id="btnPrev" title="Previous angle">‹</button><span class="dots" id="shotDots"></span><button class="btn sq" id="btnNext" title="Next angle">›</button></div>
+        <span class="sep"></span>
+        <div class="ctl"><label for="loadRange">Load</label><input id="loadRange" type="range" min="20" max="100" step="5" value="55"><output id="loadOut">55%</output></div>
+        <div class="ctl"><label for="rpmRange">RPM</label><input id="rpmRange" type="range" min="600" max="1800" step="30" value="1480"><output id="rpmOut">1480</output></div>
+        <div class="ctl">
+          <label for="faultSel">Fault</label>
+          <select id="faultSel" class="ctl-sel">
+            <option value="healthy">Healthy Baseline</option>
+            <option value="imbalance">Rotor Imbalance (1×)</option>
+            <option value="bearing">Bearing Wear (High-Freq)</option>
+            <option value="misalign">Shaft Misalignment (2×)</option>
+          </select>
+        </div>
+        <button class="btn amber" id="btnLearn" title="Record current Load/RPM as healthy baseline">Learn Baseline</button>
+        <button class="btn" id="btnCaptureTab2" title="Save snapshot to Tab 2 Data Store">Save to Tab 2</button>
+        <button class="chipbtn on" id="btnLabels">Labels</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- =======================================================================
+     TAB 2: DATA STORE, PREDICTIVE ANALYTICS & REPAIR SCHEDULER
+     ======================================================================= -->
+<section id="tab2" class="view-tab">
+  <div class="t2-wrap">
+    <div class="t2-header">
+      <div>
+        <h1>MotorSense Predictive Maintenance &amp; Prognostics Console</h1>
+        <p>Persistent sensor datastore, custom operating-condition simulator, degradation forecast, and next scheduled repair planner.</p>
+      </div>
+      <div class="t2-actions">
+        <button class="btn primary" id="btnSyncLive">+ Capture Live 3D Twin State</button>
+        <button class="btn" id="btnExportCsv">Export CSV Log</button>
+        <button class="btn" id="btnResetStore">Reset Sample Data</button>
+      </div>
+    </div>
+
+    <!-- Top 4 KPI Summary Cards -->
+    <div class="kpi-row">
+      <div class="kpi-card" id="kpiHealthCard">
+        <div class="lbl-k">Current Machine Condition</div>
+        <div class="val-k" id="kpiHealthVal">98.4% Healthy</div>
+        <div class="sub-k" id="kpiHealthSub">Status: NORMAL · Context-verified</div>
+      </div>
+      <div class="kpi-card" id="kpiRulCard">
+        <div class="lbl-k">Estimated Remaining Useful Life</div>
+        <div class="val-k" id="kpiRulVal">1,420 hrs</div>
+        <div class="sub-k" id="kpiRulSub">~59 operating days at 24h/day duty</div>
+      </div>
+      <div class="kpi-card" id="kpiDateCard">
+        <div class="lbl-k">Next Scheduled Repair Date</div>
+        <div class="val-k" id="kpiDateVal">Jan 23, 2027</div>
+        <div class="sub-k" id="kpiDateSub">Preventive inspection window</div>
+      </div>
+      <div class="kpi-card" id="kpiDevCard">
+        <div class="lbl-k">Context-Adjusted Deviation</div>
+        <div class="val-k" id="kpiDevVal">+0.04 mm/s</div>
+        <div class="sub-k" id="kpiDevSub">0.42 σ from learned load/RPM profile</div>
+      </div>
+    </div>
+
+    <!-- Main 2-Column Workspace -->
+    <div class="t2-grid">
+      <!-- Left: Custom Input Form to Test & Store Machine Readings -->
+      <div class="card">
+        <h2>Input &amp; Analyze Sensor Data</h2>
+        <div class="sub">Enter custom motor readings to evaluate condition, store in database, and recalculate repair schedule.</div>
+
+        <div class="preset-row">
+          <button type="button" class="preset-btn" data-preset="heavy_ok">Heavy Load (Healthy)</button>
+          <button type="button" class="preset-btn" data-preset="early_imbal">Early Rotor Imbalance</button>
+          <button type="button" class="preset-btn" data-preset="bearing_crit">Severe Bearing Spalling</button>
+          <button type="button" class="preset-btn" data-preset="overheat">Lubrication / Thermal</button>
+        </div>
+
+        <form id="inputForm">
+          <div class="form-grid">
+            <div class="field">
+              <label for="inRpm">Rotational Speed (RPM)</label>
+              <input type="number" id="inRpm" min="300" max="3600" step="10" value="1480" required>
+            </div>
+            <div class="field">
+              <label for="inCurrent">Motor Current (A)</label>
+              <input type="number" id="inCurrent" min="2" max="45" step="0.1" value="15.2" required>
+            </div>
+            <div class="field">
+              <label for="inVibRms">Vibration RMS (mm/s)</label>
+              <input type="number" id="inVibRms" min="0.1" max="25" step="0.05" value="2.25" required>
+            </div>
+            <div class="field">
+              <label for="inKurtosis">Vibration Kurtosis</label>
+              <input type="number" id="inKurtosis" min="1.5" max="15" step="0.05" value="3.10" required>
+            </div>
+            <div class="field">
+              <label for="inTemp">Bearing / Casing Temp (°C)</label>
+              <input type="number" id="inTemp" min="20" max="130" step="0.5" value="54.0" required>
+            </div>
+            <div class="field">
+              <label for="inDuty">Daily Duty Cycle (hrs/day)</label>
+              <input type="number" id="inDuty" min="1" max="24" step="1" value="16" required>
+            </div>
+            <div class="field full">
+              <label for="inNote">Operator Note / Inspection Tag</label>
+              <input type="text" id="inNote" placeholder="e.g., Pump Station B - Shift 2 check" value="Manual diagnostic entry">
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-top:1rem;">
+            <button type="submit" class="btn primary" style="flex:1;">Analyze &amp; Store Record</button>
+            <button type="button" class="btn" id="btnPreviewOnly">Preview Only</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Right: Diagnostic Report, Maintenance Requirements, Trajectory & Stored Table -->
+      <div style="display:flex; flex-direction:column; gap:1.25rem;">
+        <div class="card">
+          <h2>
+            <span>Machine Health Assessment &amp; Maintenance Requirements</span>
+            <span class="badge-st NORMAL" id="diagBadge">NORMAL</span>
+          </h2>
+          <div class="sub" id="diagSub">Context-aware comparison against learned baseline for current current/RPM operating point</div>
+
+          <div class="diag-box">
+            <div class="diag-banner">
+              <strong style="font-family:var(--font-display);font-size:1rem;" id="diagTitle">Operating Normally Within Learned Envelope</strong>
+              <span style="font-family:var(--font-mono);font-size:0.78rem;color:var(--cyan);" id="diagNextWindow">Next Repair: Jan 23, 2027</span>
+            </div>
+            <p class="diag-summary" id="diagSummary"></p>
+            <ul class="req-list" id="diagReqs"></ul>
+          </div>
+
+          <div class="chart-wrap">
+            <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:0.74rem;color:var(--ink-dim);margin-bottom:4px;">
+              <span>DEGRADATION TRAJECTORY &amp; RUL PROJECTION (VIBRATION DEVIATION vs CRITICAL LIMIT)</span>
+              <span>CRITICAL THRESHOLD: +4.5 mm/s</span>
+            </div>
+            <canvas id="cvDegrade" width="820" height="220"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>
+            <span>Stored Telemetry &amp; Maintenance Log</span>
+            <span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--ink-dim);" id="tableMeta">0 records stored in browser</span>
+          </h2>
+          <div class="sub">Historical and user-entered operating points analyzed by the Raspberry Pi predictive algorithm.</div>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>RPM</th>
+                  <th>Current</th>
+                  <th>Actual RMS</th>
+                  <th>Baseline RMS</th>
+                  <th>Kurtosis</th>
+                  <th>Temp</th>
+                  <th>Health</th>
+                  <th>Status</th>
+                  <th>Next Repair</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="logTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+function $(id){ return document.getElementById(id); }
+function clamp(v,a,b){ return v < a ? a : (v > b ? b : v); }
+function lerp(a,b,t){ return a + (b - a) * t; }
+function deg(d){ return d * Math.PI / 180; }
+function easeIO(t){ t = clamp(t,0,1); return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2; }
+function seeded(seed){ return function(){ seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }; }
+
+var toastEl = $('toast'), toastT = 0;
+function toast(msg){
+  toastEl.textContent = msg; toastEl.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(function(){ toastEl.classList.remove('on'); }, 2200);
+}
+
+/* =====================================================================
+   SHARED CONTEXT-AWARE PREDICTIVE MAINTENANCE MODEL
+   ===================================================================== */
+// Learned baseline adjustment offsets (updated when user clicks "Learn Baseline")
+var learnedOffset = { vib: 0, temp: 0 };
+
+// Expected healthy vibration RMS (mm/s) as a smooth function of RPM and motor load current (A)
+function expectedHealthyRms(rpm, current){
+  var rpmNorm = clamp((rpm - 600) / 1200, 0, 1.5);
+  var loadNorm = clamp((current - 7.5) / 17.5, 0, 1.5);
+  return Math.max(0.6, 0.95 + 1.15 * rpmNorm + 0.85 * Math.pow(loadNorm, 1.15) + learnedOffset.vib);
+}
+function expectedHealthyTemp(rpm, current){
+  var rpmNorm = clamp((rpm - 600) / 1200, 0, 1.5);
+  var loadNorm = clamp((current - 7.5) / 17.5, 0, 1.5);
+  return 36.0 + 11.0 * rpmNorm + 16.5 * loadNorm + learnedOffset.temp;
+}
+
+// Comprehensive diagnostic & prognostic evaluation for any (rpm, current, vibRms, kurtosis, temp, dutyHours)
+function evaluateMotorCondition(d){
+  var rpm = Number(d.rpm) || 1480;
+  var cur = Number(d.current) || 14.8;
+  var vib = Number(d.vibRms) || 2.1;
+  var kurt = Number(d.kurtosis) || 3.0;
+  var temp = Number(d.temp) || 52.0;
+  var duty = clamp(Number(d.duty) || 16, 1, 24);
+
+  var baseRms = expectedHealthyRms(rpm, cur);
+  var baseTemp = expectedHealthyTemp(rpm, cur);
+  var deltaVib = vib - baseRms;
+  var deltaTemp = temp - baseTemp;
+  var sigma = 0.28 + 0.08 * baseRms;
+  var zScore = Math.max(0, deltaVib / sigma);
+
+  // Impulsive bearing fault penalty from kurtosis > 3.4
+  var kurtExcess = Math.max(0, kurt - 3.35);
+  var tempExcess = Math.max(0, deltaTemp - 5.0);
+
+  // Composite severity index (0 = pristine, 100 = imminent failure)
+  var severity = clamp(
+    Math.max(0, deltaVib) * 14.5 +
+    kurtExcess * 9.5 +
+    tempExcess * 1.45,
+    0, 100
+  );
+  var health = clamp(100 - severity, 2, 100);
+
+  var status = 'NORMAL';
+  if (health < 55 || deltaVib >= 3.4 || kurt >= 6.2 || temp >= 88) status = 'CRITICAL';
+  else if (health < 82 || deltaVib >= 1.35 || kurt >= 4.2 || temp >= 74) status = 'WARNING';
+
+  // Likely root cause classification
+  var faultType = 'Healthy Operating Envelope';
+  var reqs = [];
+  var summary = '';
+
+  if (status === 'NORMAL'){
+    faultType = 'Healthy Baseline Matched';
+    summary = 'Vibration (' + vib.toFixed(2) + ' mm/s) and thermal profile (' + temp.toFixed(1) + ' °C) align with the learned healthy baseline (' + baseRms.toFixed(2) + ' mm/s) for ' + rpm + ' RPM and ' + cur.toFixed(1) + ' A load. No false alarm triggered.';
+    reqs = [
+      '<strong>Routine Lubrication:</strong> Maintain standard lithium-complex grease schedule every 2,000 operating hours.',
+      '<strong>Baseline Tracking:</strong> Raspberry Pi edge daemon continues passive drift logging; no immediate parts required.',
+      '<strong>Next Inspection:</strong> Standard visual coupling and terminal box check during planned turnaround.'
+    ];
+  } else if (kurt >= 4.3 && kurtExcess * 8 >= Math.max(0, deltaVib) * 10){
+    faultType = 'Rolling-Element Bearing Wear (High Kurtosis)';
+    summary = 'Elevated kurtosis (' + kurt.toFixed(2) + ') with high-frequency spectral energy indicates early-to-moderate inner/outer race spalling on the drive-end bearing.';
+    reqs = [
+      '<strong>Replacement Parts:</strong> Drive-End Deep Groove Ball Bearing (SKF 6309-2Z / C3 clearance) &amp; shaft lip seal.',
+      '<strong>Lubrication Action:</strong> Purge old grease and replenish with high-load synthetic polyurea bearing grease.',
+      '<strong>Maintenance Window:</strong> ' + (status === 'CRITICAL' ? 'Immediate shutdown within 24–48 hours to prevent rotor-stator rub.' : 'Schedule bearing swap within next 7–14 days.')
+    ];
+  } else if (tempExcess > 10 && deltaVib < 2.2){
+    faultType = 'Thermal Overload / Cooling Restriction';
+    summary = 'Casing temperature (' + temp.toFixed(1) + ' °C) exceeds the learned thermal curve by +' + deltaTemp.toFixed(1) + ' °C despite moderate mechanical vibration.';
+    reqs = [
+      '<strong>Cooling Inspection:</strong> Clear dust/debris from motor cooling fins, fan cowl, and gearbox breather vent.',
+      '<strong>Electrical Check:</strong> Verify 3-phase current balance across Hall sensors and inspect terminal lugs for resistance heating.',
+      '<strong>Lubrication Check:</strong> Check gearbox oil viscosity and level.'
+    ];
+  } else if (deltaVib >= 1.35){
+    faultType = (rpm > 1350 && kurt < 4.0) ? 'Rotor Imbalance / Shaft Misalignment' : 'Mechanical Looseness / Coupling Wear';
+    summary = 'Vibration exceeds the load-compensated baseline by +' + deltaVib.toFixed(2) + ' mm/s (' + zScore.toFixed(2) + ' σ), indicating rotational unbalance or angular coupling misalignment.';
+    reqs = [
+      '<strong>Mechanical Action:</strong> Perform single-plane dynamic rotor balancing and laser shaft-to-gearbox alignment.',
+      '<strong>Hardware Required:</strong> Flexible spider coupling elastomer insert (NBR 98 Shore-A) &amp; stainless alignment shims.',
+      '<strong>Fastener Torque:</strong> Re-torque motor mounting foot bolts and foundation anchor studs.'
+    ];
+  } else {
+    faultType = 'Gradual Mechanical Drift';
+    summary = 'Persistent low-level deviation (+' + deltaVib.toFixed(2) + ' mm/s) tracked over consecutive windows. Early intervention prevents unplanned downtime.';
+    reqs = [
+      '<strong>Condition Check:</strong> Inspect drive belt/coupling tension and verify ADXL1002 magnetic stud mount.',
+      '<strong>Parts Standby:</strong> Stage spare bearing kit and coupling insert in maintenance crib.'
+    ];
+  }
+
+  // Remaining Useful Life (RUL) estimation in operating hours
+  var rulHours;
+  if (status === 'NORMAL') rulHours = Math.round(1450 * (health / 100));
+  else if (status === 'WARNING') rulHours = Math.round(180 + (health - 55) * 14);
+  else rulHours = Math.max(12, Math.round(health * 2.4));
+
+  var rulDays = Math.max(1, Math.round(rulHours / duty));
+  var repairDate = new Date(Date.now() + rulDays * 86400000);
+  var dateStr = repairDate.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+
+  return {
+    rpm: rpm, current: cur, vibRms: vib, kurtosis: kurt, temp: temp, duty: duty,
+    baseRms: baseRms, baseTemp: baseTemp, deltaVib: deltaVib, zScore: zScore,
+    health: health, status: status, faultType: faultType,
+    summary: summary, reqs: reqs, rulHours: rulHours, rulDays: rulDays, repairDateStr: dateStr
+  };
+}
+
+/* =====================================================================
+   TAB SWITCHING LOGIC
+   ===================================================================== */
+var activeTab = 1;
+function switchTab(idx){
+  activeTab = idx;
+  $('tab1').classList.toggle('active', idx === 1);
+  $('tab2').classList.toggle('active', idx === 2);
+  $('navTab1').classList.toggle('active', idx === 1);
+  $('navTab2').classList.toggle('active', idx === 2);
+  $('navTab1').setAttribute('aria-selected', idx === 1);
+  $('navTab2').setAttribute('aria-selected', idx === 2);
+  if (idx === 1){
+    relayout();
+  } else {
+    renderTab2All();
+  }
+}
+$('navTab1').addEventListener('click', function(){ switchTab(1); });
+$('navTab2').addEventListener('click', function(){ switchTab(2); });
+
+/* =====================================================================
+   TAB 1: 3D DIGITAL TWIN (THREE.JS)
+   ===================================================================== */
+var stage = $('stage'), canvas = $('gl');
+var renderer = new THREE.WebGLRenderer({ canvas:canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+var BG = 0x050b12;
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(BG);
+scene.fog = new THREE.FogExp2(BG, 0.032);
+var camera = new THREE.PerspectiveCamera(36, 16 / 9, 0.05, 80);
+
+function resize(){
+  var w = Math.max(2, stage.clientWidth), h = Math.max(2, stage.clientHeight);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+
+// Studio environment reflections for metallic surfaces
+var ENV = (function(){
+  var s = new THREE.Scene();
+  var room = new THREE.Mesh(new THREE.BoxGeometry(28, 14, 28), new THREE.MeshBasicMaterial({ color:0x111a21, side:THREE.BackSide }));
+  room.position.y = 6; s.add(room);
+  function soft(w, h, x, y, z, rx, ry, k, col){
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color:new THREE.Color(col).multiplyScalar(k), side:THREE.DoubleSide }));
+    m.position.set(x, y, z); m.rotation.set(rx, ry, 0); s.add(m);
+  }
+  var half = Math.PI / 2;
+  soft(1.6, 12, -3, 12.8, -1, half, 0, 7, 0xe8f6ff);
+  soft(1.6, 12,  2, 12.8,  2, half, 0, 6, 0xffffff);
+  soft(10, 3.5, -13, 5, 0, 0, half, 2.8, 0x9fe8ff);
+  soft(10, 3.5,  13, 4.5, -2, 0, half, 1.8, 0xffe2b8);
+  var pm = new THREE.PMREMGenerator(renderer);
+  return pm.fromScene(s, 0.02).texture;
+})();
+
+function mkCanvas(w, h){ var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function texFrom(c, rep){
+  var t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.encoding = THREE.sRGBEncoding;
+  if (rep) t.repeat.set(rep[0], rep[1]);
+  return t;
+}
+
+var floorTex = (function(){
+  var W = 512, c = mkCanvas(W, W), g = c.getContext('2d'), img = g.createImageData(W, W), d = img.data;
+  for (var i = 0; i < W * W; i++){ var n = 68 + Math.random() * 18; d[i*4] = n; d[i*4+1] = n + 4; d[i*4+2] = n + 7; d[i*4+3] = 255; }
+  g.putImageData(img, 0, 0);
+  g.strokeStyle = 'rgba(0,229,199,0.08)'; g.lineWidth = 2; g.strokeRect(1, 1, W - 2, W - 2);
+  return texFrom(c, [12, 12]);
+})();
+
+function makePlate(text, w, h, fg, bg){
+  var pxW = 512, pxH = Math.max(40, Math.round(512 * h / w));
+  var c = mkCanvas(pxW, pxH), g = c.getContext('2d');
+  g.fillStyle = bg || '#0b151c'; g.fillRect(0, 0, pxW, pxH);
+  g.strokeStyle = 'rgba(0,229,199,0.45)'; g.lineWidth = 4; g.strokeRect(4, 4, pxW - 8, pxH - 8);
+  g.fillStyle = fg || '#dceff2'; g.font = '600 ' + Math.round(pxH * 0.48) + 'px monospace';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, pxW / 2, pxH / 2 + 1);
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map:texFrom(c), roughness:0.45, metalness:0.25 }));
+}
+
+function pbr(o){ o.envMap = ENV; if (o.envMapIntensity === undefined) o.envMapIntensity = 0.9; return new THREE.MeshStandardMaterial(o); }
+var M = {
+  steel:   pbr({ color:0xc8d0d6, metalness:0.95, roughness:0.28 }),
+  chrome:  pbr({ color:0xf2f5f8, metalness:1.0, roughness:0.10, envMapIntensity:1.25 }),
+  aluDark: pbr({ color:0x263038, metalness:0.85, roughness:0.35 }),
+  frame:   pbr({ color:0x2b353c, metalness:0.5, roughness:0.5 }),
+  frameLt: pbr({ color:0x525e66, metalness:0.55, roughness:0.48 }),
+  motor:   pbr({ color:0x135c66, metalness:0.4, roughness:0.44 }),
+  motorDk: pbr({ color:0x0e4149, metalness:0.45, roughness:0.5 }),
+  cast:    pbr({ color:0x39464e, metalness:0.6, roughness:0.56 }),
+  yellow:  pbr({ color:0xd8a514, metalness:0.2, roughness:0.52 }),
+  copper:  pbr({ color:0xc87336, metalness:0.9, roughness:0.28 }),
+  pcb:     pbr({ color:0x0c5e36, metalness:0.25, roughness:0.45 }),
+  hatBlue: pbr({ color:0x124b7a, metalness:0.3, roughness:0.42 }),
+  cable:   pbr({ color:0x16191c, metalness:0, roughness:0.62 }),
+  cableOr: pbr({ color:0xd96b1c, metalness:0, roughness:0.55 }),
+  cableCy: pbr({ color:0x00b8a0, metalness:0, roughness:0.5 }),
+  floor:   pbr({ color:0xffffff, map:floorTex, roughness:0.85, metalness:0, envMapIntensity:0.45 }),
+  glass:   new THREE.MeshPhysicalMaterial({ color:0x08131c, metalness:0, roughness:0.06, transparent:true, opacity:0.35, clearcoat:1 }),
+  led:     function(hex){ return new THREE.MeshBasicMaterial({ color:hex }); }
+};
+
+function mBox(w, h, d, mat, x, y, z, parent){
+  var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
+  if (parent) parent.add(m); return m;
+}
+function mCyl(rt, rb, h, seg, mat, x, y, z, parent, rotX, rotZ){
+  var m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+  m.position.set(x, y, z); m.rotation.x = rotX || 0; m.rotation.z = rotZ || 0;
+  m.castShadow = true; m.receiveShadow = true;
+  if (parent) parent.add(m); return m;
+}
+function cableTube(pts, radius, mat, parent){
+  var v = pts.map(function(p){ return new THREE.Vector3(p[0], p[1], p[2]); });
+  var curve = new THREE.CatmullRomCurve3(v, false, 'catmullrom', 0.35);
+  var m = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(12, pts.length * 10), radius, 7, false), mat);
+  m.castShadow = true; if (parent) parent.add(m); return m;
+}
+
+var glowTex = (function(){
+  var c = mkCanvas(128, 128), g = c.getContext('2d');
+  var gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.4)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  var t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+})();
+function glowSprite(hex, size, opacity, x, y, z, parent){
+  var s = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:hex, transparent:true, opacity:opacity, blending:THREE.AdditiveBlending, depthWrite:false }));
+  s.scale.set(size, size, 1); s.position.set(x, y, z); if (parent) parent.add(s); return s;
+}
+
+/* ---------- Scene Lighting & Floor ---------- */
+var floor = new THREE.Mesh(new THREE.PlaneGeometry(36, 36), M.floor);
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+var lineMat = pbr({ color:0xd8a514, roughness:0.7 });
+[-1.9, 1.9].forEach(function(z){
+  var ln = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 0.08), lineMat);
+  ln.rotation.x = -Math.PI / 2; ln.position.set(0.2, 0.003, z); scene.add(ln);
+});
+
+scene.add(new THREE.HemisphereLight(0x9ac4d8, 0x161c22, 0.42));
+var keyLight = new THREE.DirectionalLight(0xfff1de, 1.05);
+keyLight.position.set(4.2, 8.5, 5.0); keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.left = -5; keyLight.shadow.camera.right = 5;
+keyLight.shadow.camera.top = 5; keyLight.shadow.camera.bottom = -5;
+keyLight.shadow.bias = -0.0004;
+scene.add(keyLight);
+var rimLight = new THREE.DirectionalLight(0x5ac8fa, 0.45);
+rimLight.position.set(-5, 4.5, -5); scene.add(rimLight);
+
+/* ---------- Industrial Skid, Motor, Enclosed Coupling Shroud & Driven Load ---------- */
+var rig = new THREE.Group(); scene.add(rig);
+var motorVibGroup = new THREE.Group(); rig.add(motorVibGroup);
+var ANCHOR = {};
+function anchor(name, x, y, z){ ANCHOR[name] = new THREE.Vector3(x, y, z); }
+
+// Heavy Steel Skid Base
+mBox(4.2, 0.14, 1.55, M.frame, -0.1, 0.07, 0, rig);
+[-1.9, -0.6, 0.7, 1.8].forEach(function(x){
+  [-0.68, 0.68].forEach(function(z){ mBox(0.18, 0.04, 0.18, M.frameLt, x, 0.16, z, rig); });
+});
+
+// 15 kW 3-Phase Induction Motor (centered at x = -1.35, y = 0.62, z = 0)
+var MX = -1.35, MY = 0.62;
+mBox(0.92, 0.24, 0.64, M.cast, MX, 0.26, 0, motorVibGroup); // mounting pedestal
+mCyl(0.31, 0.31, 0.96, 36, M.motor, MX, MY, 0, motorVibGroup, 0, Math.PI / 2);
+// Cooling fins around stator
+for (var fi = 0; fi < 18; fi++){
+  var a = fi / 18 * Math.PI * 2;
+  var fin = mBox(0.84, 0.024, 0.014, M.motorDk, MX, MY + Math.cos(a) * 0.315, Math.sin(a) * 0.315, motorVibGroup);
+  fin.rotation.x = -a;
+}
+// End bells & rear fan cowl
+mCyl(0.315, 0.28, 0.12, 36, M.cast, MX + 0.50, MY, 0, motorVibGroup, 0, Math.PI / 2);
+mCyl(0.315, 0.315, 0.22, 36, M.aluDark, MX - 0.56, MY, 0, motorVibGroup, 0, Math.PI / 2);
+// Top Electrical Terminal Box (with 3-phase power leads)
+mBox(0.24, 0.16, 0.24, M.cast, MX + 0.08, MY + 0.36, 0.08, motorVibGroup);
+mBox(0.26, 0.03, 0.26, M.frameLt, MX + 0.08, MY + 0.45, 0.08, motorVibGroup);
+var mPlate = makePlate('3-PH INDUCTION 15kW', 0.34, 0.11, '#00e5c7', '#08131b');
+mPlate.position.set(MX, MY + 0.05, 0.322); motorVibGroup.add(mPlate);
+
+// Rotating Shaft, Enclosed Jaw Coupling & Driven Load Pulley
+// All rotating components are strictly centered on the X-axis (y = MY, z = 0)
+var rotorSpin = new THREE.Group();
+rotorSpin.position.set(0, MY, 0);
+rig.add(rotorSpin);
+
+// Continuous central steel shaft
+mCyl(0.044, 0.044, 1.78, 24, M.chrome, -0.05, 0, 0, rotorSpin, 0, Math.PI / 2);
+// Jaw coupling hubs inside protective shroud (x = -0.76)
+mCyl(0.115, 0.115, 0.11, 28, M.steel, -0.82, 0, 0, rotorSpin, 0, Math.PI / 2);
+mCyl(0.105, 0.105, 0.05, 28, M.yellow, -0.75, 0, 0, rotorSpin, 0, Math.PI / 2);
+mCyl(0.115, 0.115, 0.11, 28, M.steel, -0.68, 0, 0, rotorSpin, 0, Math.PI / 2);
+// Eccentric test mass collar (inside shroud)
+var imbalWeight = mBox(0.055, 0.06, 0.055, M.cableOr, -0.75, 0.105, 0, rotorSpin);
+
+// Optical reflective index strip on exposed shaft (x = -0.46)
+mCyl(0.047, 0.047, 0.045, 24, M.aluDark, -0.46, 0, 0, rotorSpin, 0, Math.PI / 2);
+mBox(0.046, 0.018, 0.098, M.yellow, -0.46, 0, 0, rotorSpin);
+
+// Fully Enclosed Stationary Coupling Guard / Actuator Shroud (covers x = -0.94 to -0.56 cleanly)
+var guardGroup = new THREE.Group();
+rig.add(guardGroup);
+// Cylindrical outer barrel shroud
+mCyl(0.165, 0.165, 0.36, 36, M.aluDark, -0.75, MY, 0, guardGroup, 0, Math.PI / 2);
+// Left & right solid circular bulkhead plates so nothing clips through
+mCyl(0.172, 0.172, 0.022, 36, M.frameLt, -0.93, MY, 0, guardGroup, 0, Math.PI / 2);
+mCyl(0.172, 0.172, 0.022, 36, M.frameLt, -0.57, MY, 0, guardGroup, 0, Math.PI / 2);
+// Yellow safety trim rings on the shroud
+mCyl(0.175, 0.175, 0.016, 36, M.yellow, -0.88, MY, 0, guardGroup, 0, Math.PI / 2);
+mCyl(0.175, 0.175, 0.016, 36, M.yellow, -0.62, MY, 0, guardGroup, 0, Math.PI / 2);
+// Solid pedestal base block supporting the shroud flush on the skid
+mBox(0.36, 0.48, 0.34, M.frame, -0.75, 0.38, 0, guardGroup);
+mBox(0.40, 0.03, 0.38, M.frameLt, -0.75, 0.155, 0, guardGroup);
+// Inspection bolts on the shroud side
+[-0.86, -0.64].forEach(function(bx){
+  mCyl(0.01, 0.01, 0.35, 6, M.steel, bx, MY + 0.08, 0, guardGroup, Math.PI / 2, 0);
+});
+
+// Helical Gearbox & Driven Load Flywheel (x = 0.25 to 0.95)
+var gearMat = M.cast.clone(); gearMat.emissive = new THREE.Color(0xff551a); gearMat.emissiveIntensity = 0;
+mBox(0.56, 0.56, 0.54, gearMat, 0.15, 0.52, 0, rig);
+mBox(0.62, 0.10, 0.60, M.frameLt, 0.15, 0.19, 0, rig);
+// Output flywheel / pulley
+mCyl(0.28, 0.28, 0.16, 36, M.steel, 0.72, MY, 0, rotorSpin, 0, Math.PI / 2);
+mCyl(0.14, 0.14, 0.20, 24, M.aluDark, 0.72, MY, 0, rotorSpin, 0, Math.PI / 2);
+for (var sp = 0; sp < 6; sp++){
+  var sa = sp / 6 * Math.PI * 2;
+  mCyl(0.012, 0.012, 0.21, 8, M.yellow, 0.72, Math.cos(sa)*0.20, Math.sin(sa)*0.20, rotorSpin, 0, Math.PI / 2);
+}
+
+/* ---------- 4 External Sensors on the Motor & Gearbox ---------- */
+// 1. ADXL1002 MEMS Accelerometer (magnetic stud mounted on motor drive-end housing)
+var ACC = new THREE.Vector3(MX + 0.42, MY + 0.27, 0.16);
+mCyl(0.028, 0.028, 0.02, 8, M.steel, ACC.x, ACC.y, ACC.z, motorVibGroup);
+mBox(0.044, 0.036, 0.044, M.aluDark, ACC.x, ACC.y + 0.026, ACC.z, motorVibGroup);
+mBox(0.046, 0.010, 0.046, M.yellow, ACC.x, ACC.y + 0.046, ACC.z, motorVibGroup);
+var accRing = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:0x00e5c7, transparent:true, opacity:0.65, blending:THREE.AdditiveBlending, depthWrite:false }));
+accRing.position.set(ACC.x, ACC.y + 0.05, ACC.z); accRing.scale.set(0.18, 0.18, 1); motorVibGroup.add(accRing);
+anchor('accel', ACC.x, ACC.y + 0.07, ACC.z);
+
+// 2. Hall-Effect Split-Core Current Sensor (clamped around 3-phase power conduit)
+var CUR = new THREE.Vector3(MX + 0.08, MY + 0.36, 0.34);
+cableTube([[MX + 0.08, MY + 0.36, 0.20], [CUR.x, CUR.y, 0.46], [CUR.x + 0.22, 0.20, 0.56], [1.45, 0.16, 0.56]], 0.018, M.cable, rig);
+mCyl(0.048, 0.048, 0.055, 24, M.aluDark, CUR.x, CUR.y, CUR.z, rig, Math.PI / 2, 0);
+mCyl(0.050, 0.050, 0.016, 24, M.cableCy, CUR.x, CUR.y, CUR.z, rig, Math.PI / 2, 0);
+anchor('current', CUR.x, CUR.y + 0.06, CUR.z);
+
+// 3. Optical / Hall RPM Tachometer Sensor (bracket mounted aimed at shaft index ring at x = -0.46)
+var RPM_P = new THREE.Vector3(-0.46, MY + 0.17, 0.26);
+mBox(0.04, 0.64, 0.04, M.frameLt, RPM_P.x, 0.46, RPM_P.z + 0.04, rig);
+mCyl(0.016, 0.016, 0.14, 16, M.chrome, RPM_P.x, RPM_P.y, RPM_P.z - 0.04, rig, Math.PI / 2.4, 0);
+var rpmLed = M.led(0x00e5c7);
+mBox(0.02, 0.02, 0.02, rpmLed, RPM_P.x, RPM_P.y + 0.02, RPM_P.z + 0.02, rig);
+anchor('rpm', RPM_P.x, RPM_P.y + 0.05, RPM_P.z);
+
+// 4. PT100 Gearbox Bearing Temperature Probe (threaded into gearbox housing)
+var TMP = new THREE.Vector3(0.15, 0.72, 0.28);
+mCyl(0.014, 0.014, 0.09, 14, M.chrome, TMP.x, TMP.y, TMP.z + 0.03, rig, Math.PI / 2, 0);
+mBox(0.045, 0.045, 0.045, M.aluDark, TMP.x, TMP.y, TMP.z + 0.085, rig);
+var tmpLed = M.led(0xf2b84b);
+mBox(0.016, 0.016, 0.016, tmpLed, TMP.x, TMP.y + 0.026, TMP.z + 0.085, rig);
+anchor('temp', TMP.x, TMP.y + 0.05, TMP.z + 0.09);
+
+/* ---------- Open-Front Industrial Enclosure with Raspberry Pi 4B/5 Edge SBC ---------- */
+var CAB_X = 1.65, CAB_Z = 0.05;
+// Cabinet outer shell (open front facing +Z so the Raspberry Pi & GPIO HAT are clearly visible)
+mBox(0.76, 1.38, 0.04, M.frame, CAB_X, 0.69, CAB_Z - 0.22, rig);   // back wall
+mBox(0.04, 1.38, 0.48, M.frame, CAB_X - 0.36, 0.69, CAB_Z, rig);   // left wall
+mBox(0.04, 1.38, 0.48, M.frame, CAB_X + 0.36, 0.69, CAB_Z, rig);   // right wall
+mBox(0.78, 0.05, 0.50, M.frameLt, CAB_X, 1.39, CAB_Z, rig);        // roof
+mBox(0.80, 0.08, 0.52, M.frameLt, CAB_X, 0.04, CAB_Z, rig);        // base plinth
+
+// Backplate & DIN rails inside cabinet
+mBox(0.64, 1.16, 0.015, M.aluDark, CAB_X, 0.72, CAB_Z - 0.19, rig);
+mBox(0.58, 0.04, 0.02, M.steel, CAB_X, 0.96, CAB_Z - 0.175, rig);
+mBox(0.58, 0.04, 0.02, M.steel, CAB_X, 0.48, CAB_Z - 0.175, rig);
+
+// Raspberry Pi 4B/5 Single-Board Computer mounted on brass standoffs
+var RPI_X = CAB_X - 0.08, RPI_Y = 0.92, RPI_Z = CAB_Z - 0.13;
+// Brass standoffs
+[[-0.14,-0.08],[0.14,-0.08],[-0.14,0.08],[0.14,0.08]].forEach(function(off){
+  mCyl(0.008, 0.008, 0.035, 6, M.yellow, RPI_X + off[0], RPI_Y + off[1], RPI_Z - 0.015, rig, Math.PI / 2, 0);
+});
+// Raspberry Pi Green PCB (85mm x 56mm scaled proportionally for clear visibility)
+mBox(0.32, 0.21, 0.014, M.pcb, RPI_X, RPI_Y, RPI_Z, rig);
+// Broadcom Quad-Core SoC + Black Finned Aluminum Heatsink
+mBox(0.075, 0.075, 0.024, M.aluDark, RPI_X - 0.02, RPI_Y + 0.01, RPI_Z + 0.018, rig);
+for (var hf = 0; hf < 5; hf++){
+  mBox(0.075, 0.006, 0.012, M.frameLt, RPI_X - 0.02, RPI_Y - 0.02 + hf * 0.015, RPI_Z + 0.032, rig);
+}
+// Color-coded 40-pin GPIO Header along top edge
+mBox(0.21, 0.024, 0.026, M.aluDark, RPI_X - 0.03, RPI_Y + 0.086, RPI_Z + 0.018, rig);
+mBox(0.20, 0.008, 0.008, M.yellow, RPI_X - 0.03, RPI_Y + 0.092, RPI_Z + 0.032, rig);
+// Stacked USB 3.0, USB 2.0 & Gigabit Ethernet Ports on right edge of Pi
+mBox(0.065, 0.056, 0.064, M.chrome, RPI_X + 0.14, RPI_Y + 0.062, RPI_Z + 0.036, rig); // Ethernet
+mBox(0.065, 0.052, 0.060, M.chrome, RPI_X + 0.14, RPI_Y - 0.004, RPI_Z + 0.034, rig); // USB 3.0 (blue insert)
+mBox(0.010, 0.044, 0.050, M.hatBlue, RPI_X + 0.172, RPI_Y - 0.004, RPI_Z + 0.034, rig);
+mBox(0.065, 0.052, 0.060, M.chrome, RPI_X + 0.14, RPI_Y - 0.068, RPI_Z + 0.034, rig); // USB 2.0
+// USB-C Power & Dual Micro-HDMI connectors on bottom edge
+mBox(0.034, 0.022, 0.024, M.chrome, RPI_X - 0.11, RPI_Y - 0.10, RPI_Z + 0.016, rig);
+mBox(0.026, 0.020, 0.022, M.chrome, RPI_X - 0.05, RPI_Y - 0.10, RPI_Z + 0.016, rig);
+mBox(0.026, 0.020, 0.022, M.chrome, RPI_X + 0.01, RPI_Y - 0.10, RPI_Z + 0.016, rig);
+
+// Industrial SPI / I2C High-Speed ADC Sensor HAT mounted alongside/connected to Pi
+var HAT_X = CAB_X - 0.08, HAT_Y = 0.62, HAT_Z = CAB_Z - 0.13;
+mBox(0.30, 0.18, 0.014, M.hatBlue, HAT_X, HAT_Y, HAT_Z, rig);
+// Green Pluggable Screw Terminal Blocks for ADXL1002, Hall Current, RPM & PT100
+[-0.09, -0.03, 0.03, 0.09].forEach(function(tx){
+  mBox(0.046, 0.038, 0.034, M.pcb, HAT_X + tx, HAT_Y - 0.065, HAT_Z + 0.022, rig);
+});
+// Ribbon cable linking Raspberry Pi 40-pin GPIO to Sensor ADC HAT
+mBox(0.14, 0.14, 0.006, M.frameLt, RPI_X - 0.04, 0.77, RPI_Z + 0.028, rig);
+
+var rpiPlate = makePlate('RASPBERRY PI 4B/5 + ADC HAT', 0.42, 0.065, '#00e5c7', '#071219');
+rpiPlate.position.set(RPI_X, RPI_Y + 0.16, RPI_Z + 0.01); rig.add(rpiPlate);
+anchor('board', RPI_X, RPI_Y + 0.04, RPI_Z + 0.08);
+
+// Live OLED Status Display on Right Side of Cabinet
+var scr = { c:mkCanvas(384, 240) }; scr.g = scr.c.getContext('2d');
+scr.tex = new THREE.CanvasTexture(scr.c); scr.tex.encoding = THREE.sRGBEncoding;
+var scrMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.15), new THREE.MeshBasicMaterial({ map:scr.tex }));
+scrMesh.position.set(CAB_X + 0.21, 0.88, CAB_Z - 0.14); rig.add(scrMesh);
+mBox(0.26, 0.17, 0.02, M.aluDark, CAB_X + 0.21, 0.88, CAB_Z - 0.155, rig);
+
+// 3-Color Signal Beacon Tower on Top of Cabinet
+mCyl(0.03, 0.03, 0.08, 16, M.aluDark, CAB_X, 1.45, CAB_Z, rig);
+var tower = {
+  green: M.led(0x22d36b),
+  amber: M.led(0x3a2d12),
+  red:   M.led(0x3a1414)
+};
+mCyl(0.038, 0.038, 0.055, 20, tower.green, CAB_X, 1.52, CAB_Z, rig);
+mCyl(0.038, 0.038, 0.055, 20, tower.amber, CAB_X, 1.58, CAB_Z, rig);
+mCyl(0.038, 0.038, 0.055, 20, tower.red,   CAB_X, 1.64, CAB_Z, rig);
+mCyl(0.041, 0.041, 0.014, 20, M.aluDark,   CAB_X, 1.675, CAB_Z, rig);
+anchor('tower', CAB_X, 1.62, CAB_Z);
+
+// Sensor Shielded Cables Routing Into Raspberry Pi ADC HAT Terminals
+cableTube([[ACC.x, ACC.y + 0.03, ACC.z], [-0.6, 0.96, 0.26], [0.4, 0.34, 0.36], [1.28, 0.34, 0.24], [HAT_X - 0.09, HAT_Y - 0.065, HAT_Z + 0.03]], 0.008, M.cableOr, rig);
+cableTube([[CUR.x + 0.04, CUR.y, CUR.z], [0.2, 0.28, 0.44], [1.32, 0.28, 0.22], [HAT_X - 0.03, HAT_Y - 0.065, HAT_Z + 0.03]], 0.008, M.cableCy, rig);
+cableTube([[RPM_P.x, RPM_P.y - 0.04, RPM_P.z], [-0.46, 0.22, 0.34], [1.36, 0.22, 0.20], [HAT_X + 0.03, HAT_Y - 0.065, HAT_Z + 0.03]], 0.007, M.cable, rig);
+cableTube([[TMP.x, TMP.y, TMP.z + 0.10], [0.45, 0.25, 0.38], [1.40, 0.25, 0.18], [HAT_X + 0.09, HAT_Y - 0.065, HAT_Z + 0.03]], 0.007, M.cableOr, rig);
+
+/* =====================================================================
+   3D CALLOUT LABELS & CAMERA CHAPTERS
+   ===================================================================== */
+var SVGNS = 'http://www.w3.org/2000/svg', labelsEl = $('labels'), leadersEl = $('leaders');
+var labels = [], labelsOn = true, curLabelIds = [];
+
+function createLabel(id, anchorName, title, sub, dx, dy){
+  var node = document.createElement('div'); node.className = 'lbl';
+  node.innerHTML = '<b></b><span></span>';
+  node.firstChild.textContent = title; node.lastChild.textContent = sub;
+  labelsEl.appendChild(node);
+  var ln = document.createElementNS(SVGNS, 'line'), dot = document.createElementNS(SVGNS, 'circle');
+  dot.setAttribute('r', '3.2');
+  leadersEl.appendChild(ln); leadersEl.appendChild(dot);
+  labels.push({ id:id, anchor:anchorName, el:node, ln:ln, dot:dot, dx:dx, dy:dy, on:false });
+}
+
+createLabel('accel',   'accel',   'ADXL1002 MEMS Accelerometer', 'SPI vibration · FFT & kurtosis', -160, -56);
+createLabel('current', 'current', 'Hall-Effect Current Sensor', 'Load context (5–25 A)', -150, 46);
+createLabel('rpm',     'rpm',     'Optical / Hall RPM Sensor', 'Tracks shaft speed & 1× freq', -110, -68);
+createLabel('temp',    'temp',    'PT100 Thermal Probe', 'Gearbox bearing temperature', 24, -52);
+createLabel('board',   'board',   'Raspberry Pi 4B/5 + ADC HAT', 'Python/C++ FFT & adaptive baseline', 34, -44);
+createLabel('tower',   'tower',   'Local OLED & Signal Tower', 'Works offline without cloud', 32, -32);
+
+var _lv = new THREE.Vector3();
+function updateLabels(){
+  var W = stage.clientWidth, H = stage.clientHeight;
+  for (var i = 0; i < labels.length; i++){
+    var L = labels[i];
+    var want = labelsOn && curLabelIds.indexOf(L.id) >= 0;
+    var vis = false, sx = 0, sy = 0;
+    if (want && ANCHOR[L.anchor]){
+      _lv.copy(ANCHOR[L.anchor]).project(camera);
+      sx = (_lv.x * 0.5 + 0.5) * W; sy = (-_lv.y * 0.5 + 0.5) * H;
+      vis = _lv.z > -1 && _lv.z < 1 && sx > 0 && sx < W && sy > 0 && sy < H;
+    }
+    if (vis){
+      var lw = L.el.offsetWidth || 160, lh = L.el.offsetHeight || 38;
+      var left = clamp(sx + L.dx, 8, Math.max(8, W - lw - 8));
+      var top  = clamp(sy + L.dy, 8, Math.max(8, H - lh - 8));
+      L.el.style.transform = 'translate(' + left.toFixed(1) + 'px,' + top.toFixed(1) + 'px)';
+      var ex = L.dx >= 0 ? left : left + lw, ey = top + lh / 2;
+      L.ln.setAttribute('x1', sx.toFixed(1)); L.ln.setAttribute('y1', sy.toFixed(1));
+      L.ln.setAttribute('x2', ex.toFixed(1)); L.ln.setAttribute('y2', ey.toFixed(1));
+      L.dot.setAttribute('cx', sx.toFixed(1)); L.dot.setAttribute('cy', sy.toFixed(1));
+    }
+    if (vis !== L.on){
+      L.on = vis;
+      L.el.classList.toggle('on', vis); L.ln.classList.toggle('on', vis); L.dot.classList.toggle('on', vis);
+    }
+  }
+}
+
+var CHAPTERS = [
+  { name:'Overview', shots:[
+    { t:[0.05, 0.72, 0.0], az:26, el:20, d:4.8, fov:35, view:'wide three-quarter digital twin view',
+      title:'Context-Aware Motor Digital Twin',
+      text:'MotorSense fuses vibration, Hall current, RPM, and bearing temperature on a Raspberry Pi 4B/5 SBC—learning healthy baselines per load and speed instead of relying on rigid thresholds.',
+      labels:['accel', 'current', 'rpm', 'temp', 'board', 'tower'] },
+    { t:[0.1, 0.65, 0.0], az:-18, el:12, d:4.5, fov:34, view:'drive-side inspection angle',
+      title:'Working Harder vs. Becoming Unhealthy',
+      text:'Adjust the Load or RPM sliders below. Normal vibration rises smoothly with mechanical load; MotorSense adapts its reference envelope so heavy duty never triggers false alarms.',
+      labels:['accel', 'current', 'rpm'] }
+  ]},
+  { name:'Sensing & FFT', shots:[
+    { t:[-0.95, 0.78, 0.15], az:36, el:18, d:2.1, fov:32, view:'ADXL1002 accelerometer & Hall current close-up',
+      title:'High-Frequency Vibration & Load Sensing',
+      text:'An ADXL1002 MEMS accelerometer captures casing vibration while a split-core Hall sensor tracks 3-phase current to identify the exact mechanical load regime.',
+      labels:['accel', 'current'] },
+    { t:[-0.45, 0.72, 0.12], az:14, el:14, d:1.85, fov:32, view:'shaft optical tachometer & gearbox PT100 probe',
+      title:'RPM Phase Reference & Thermal Tracking',
+      text:'The tachometer locks onto the 1× shaft rotation frequency while the PT100 probe monitors gearbox bearing heat for multi-sensor fault correlation.',
+      labels:['rpm', 'temp'] }
+  ]},
+  { name:'Raspberry Pi Edge', shots:[
+    { t:[1.62, 0.84, 0.05], az:12, el:12, d:2.05, fov:32, view:'open-front Raspberry Pi 4B/5 industrial cabinet',
+      title:'Offline Edge Intelligence on Raspberry Pi',
+      text:'The Raspberry Pi runs real-time digital filtering, 1024-point FFT, RMS, and kurtosis extraction via its SPI/I2C ADC HAT—maintaining full local fault detection even when disconnected from the cloud.',
+      labels:['board', 'tower'] }
+  ]},
+  { name:'Fault Diagnosis', shots:[
+    { t:[0.0, 0.75, 0.0], az:44, el:22, d:3.9, fov:34, view:'diagnostic fault-injection view',
+      title:'Early Degradation & Predictive Scheduling',
+      text:'Select Rotor Imbalance, Bearing Wear, or Shaft Misalignment in the dock to watch spectral peaks breach the learned baseline, then switch to Tab 02 to inspect RUL and next repair dates.',
+      labels:['accel', 'board', 'tower'] }
+  ]}
+];
+
+var FLAT = [];
+CHAPTERS.forEach(function(ch, ci){ ch.shots.forEach(function(sh, si){ FLAT.push({ ci:ci, si:si }); }); });
+function flatOf(ci, si){ for (var i = 0; i < FLAT.length; i++) if (FLAT[i].ci === ci && FLAT[i].si === si) return i; return 0; }
+
+function shotState(sh){ return { tx:sh.t[0], ty:sh.t[1], tz:sh.t[2], az:deg(sh.az), el:deg(sh.el), dist:sh.d, fov:sh.fov || 34 }; }
+function copyView(v){ return { tx:v.tx, ty:v.ty, tz:v.tz, az:v.az, el:v.el, dist:v.dist, fov:v.fov }; }
+function wrapPi(a){ while (a > Math.PI) a -= Math.PI*2; while (a < -Math.PI) a += Math.PI*2; return a; }
+
+var view = shotState(CHAPTERS[0].shots[0]), tween = null, lastUser = -99;
+var cur = { ci:0, si:0 }, tour = { on:false, t:0 }, built = false;
+
+var chapBtns = [];
+CHAPTERS.forEach(function(ch, ci){
+  var b = document.createElement('button'); b.type = 'button'; b.textContent = (ci + 1) + ' ' + ch.name;
+  b.addEventListener('click', function(){ goShot(ci, 0); b.blur(); });
+  $('chapterSeg').appendChild(b); chapBtns.push(b);
+});
+
+function goShot(ci, si, instant){
+  var ch = CHAPTERS[ci], sh = ch.shots[si], changed = !built || ci !== cur.ci;
+  cur.ci = ci; cur.si = si; tour.t = 0;
+  var to = shotState(sh); to.az = view.az + wrapPi(to.az - view.az);
+  if (instant) { view = to; tween = null; }
+  else tween = { from:copyView(view), to:to, t:0, dur:1.8 };
+  if (changed){
+    $('shotDots').innerHTML = '';
+    ch.shots.forEach(function(){ $('shotDots').appendChild(document.createElement('i')); });
+  }
+  var dots = $('shotDots').children;
+  for (var i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i === si);
+  chapBtns.forEach(function(b, k){ b.classList.toggle('active', k === ci); });
+  curLabelIds = sh.labels || [];
+
+  var capEl = $('caption');
+  if (instant || !built){
+    $('capStep').textContent = 'Chapter ' + (ci + 1) + ' of ' + CHAPTERS.length + ' · ' + ch.name;
+    $('capTitle').textContent = sh.title; $('capText').textContent = sh.text; $('capView').textContent = 'Camera: ' + sh.view;
+  } else {
+    capEl.classList.add('swap');
+    setTimeout(function(){
+      $('capStep').textContent = 'Chapter ' + (ci + 1) + ' of ' + CHAPTERS.length + ' · ' + ch.name;
+      $('capTitle').textContent = sh.title; $('capText').textContent = sh.text; $('capView').textContent = 'Camera: ' + sh.view;
+      capEl.classList.remove('swap');
+    }, 180);
+  }
+  built = true;
+}
+function goFlat(i){ i = (i + FLAT.length) % FLAT.length; goShot(FLAT[i].ci, FLAT[i].si); }
+
+/* ---------- Live Simulation State & Physics ---------- */
+var sim = {
+  t: 0, loadPct: 55, rpmTarget: 1480, rpm: 1480,
+  fault: 'healthy', current: 14.8, vibRms: 2.14, kurtosis: 3.05, temp: 52.4,
+  eval: null, lastStatus: 'NORMAL', screenT: 0, chartT: 0, logT: 0
+};
+var hist = { vib:[], cur:[], rpm:[], temp:[] };
+var SPARK_N = 90;
+
+var feedEl = $('feedList');
+function pushEdgeLog(status, msg){
+  var li = document.createElement('li');
+  li.className = status === 'CRITICAL' ? 'crit' : (status === 'WARNING' ? 'warn' : '');
+  var now = new Date();
+  var ts = now.toTimeString().slice(0,8);
+  li.innerHTML = '<span class="dot"></span><span><b>[' + ts + ']</b> ' + msg + '</span>';
+  feedEl.insertBefore(li, feedEl.firstChild);
+  while (feedEl.children.length > 6) feedEl.removeChild(feedEl.lastChild);
+}
+
+// FFT Spectrum arrays (48 frequency bins from 0 to 480 Hz)
+var FFT_N = 48;
+var fftLive = new Float32Array(FFT_N);
+var fftBase = new Float32Array(FFT_N);
+
+function stepSimulation(dt){
+  sim.t += dt;
+  sim.rpm += (sim.rpmTarget - sim.rpm) * Math.min(1, dt * 3.0);
+
+  // Spin shaft & flywheel smoothly at proportional angular speed
+  var omega = (sim.rpm / 60) * Math.PI * 2 * 0.14;
+  rotorSpin.rotation.x = (rotorSpin.rotation.x - omega * dt) % (Math.PI * 2);
+
+  // Compute physical sensor readings from Load, RPM, and injected Fault
+  var loadFrac = sim.loadPct / 100;
+  var rpmFrac = (sim.rpm - 600) / 1200;
+  var targetCur = 7.5 + 16.5 * loadFrac + (sim.fault === 'misalign' ? 1.4 : 0) + (Math.random() - 0.5) * 0.12;
+  sim.current += (targetCur - sim.current) * Math.min(1, dt * 4);
+
+  var healthyRms = expectedHealthyRms(sim.rpm, sim.current);
+  var faultVibAdd = 0, targetKurt = 3.02 + (Math.random() - 0.5) * 0.08, tempAdd = 0;
+
+  if (sim.fault === 'imbalance'){
+    faultVibAdd = 2.65 * (0.5 + 0.65 * rpmFrac);
+    targetKurt = 3.35 + (Math.random() - 0.5) * 0.12;
+    tempAdd = 6.5;
+  } else if (sim.fault === 'bearing'){
+    faultVibAdd = 2.15 + 0.8 * loadFrac;
+    targetKurt = 6.85 + (Math.random() - 0.5) * 0.35;
+    tempAdd = 14.5;
+  } else if (sim.fault === 'misalign'){
+    faultVibAdd = 2.35 * (0.6 + 0.5 * loadFrac);
+    targetKurt = 3.95 + (Math.random() - 0.5) * 0.18;
+    tempAdd = 9.0;
+  }
+
+  var targetVib = healthyRms + faultVibAdd + (Math.random() - 0.5) * 0.07;
+  sim.vibRms += (targetVib - sim.vibRms) * Math.min(1, dt * 4);
+  sim.kurtosis += (targetKurt - sim.kurtosis) * Math.min(1, dt * 4);
+
+  var targetTemp = expectedHealthyTemp(sim.rpm, sim.current) + tempAdd;
+  sim.temp += (targetTemp - sim.temp) * Math.min(1, dt * 0.8);
+
+  // Evaluate context-aware state
+  var ev = evaluateMotorCondition({
+    rpm: Math.round(sim.rpm), current: sim.current, vibRms: sim.vibRms,
+    kurtosis: sim.kurtosis, temp: sim.temp, duty: 16
+  });
+  sim.eval = ev;
+
+  // Physical 3D motor micro-vibration & gearbox thermal emissive glow
+  var shake = clamp((sim.vibRms - 1.2) * 0.0014, 0, 0.011);
+  motorVibGroup.position.y = Math.sin(sim.t * 58) * shake;
+  motorVibGroup.position.z = Math.cos(sim.t * 63) * shake * 0.7;
+  gearMat.emissiveIntensity = clamp((sim.temp - 55) / 55, 0, 0.42);
+
+  // Update 3D LEDs and Tower Beacon
+  var stHex = ev.status === 'CRITICAL' ? 0xff4d4d : (ev.status === 'WARNING' ? 0xf2b84b : 0x00e5c7);
+  accRing.material.color.setHex(stHex);
+  accRing.scale.setScalar(0.16 + 0.05 * Math.sin(sim.t * 8));
+  tower.green.color.setHex(ev.status === 'NORMAL' ? 0x22d36b : 0x0d2b1a);
+  tower.amber.color.setHex(ev.status === 'WARNING' ? 0xf2b84b : 0x2e230d);
+  tower.red.color.setHex(ev.status === 'CRITICAL' ? (Math.sin(sim.t * 14) > 0 ? 0xff4d4d : 0x661414) : 0x2b0d0d);
+
+  // Log state transitions automatically
+  if (ev.status !== sim.lastStatus){
+    sim.lastStatus = ev.status;
+    pushEdgeLog(ev.status, ev.status + ': ' + ev.faultType + ' (' + ev.vibRms.toFixed(2) + ' mm/s)');
+  }
+  sim.logT += dt;
+  if (sim.logT >= 6.5){
+    sim.logT = 0;
+    pushEdgeLog(ev.status, 'Ctx ' + sim.loadPct + '% @ ' + Math.round(sim.rpm) + ' RPM → ' + ev.health.toFixed(0) + '% Health');
+  }
+
+  // Update FFT bins (1x shaft frequency = sim.rpm / 60 Hz; each bin = 10 Hz)
+  var f1x = sim.rpm / 60;
+  var bin1 = f1x / 10;
+  var bin2 = bin1 * 2;
+  for (var b = 0; b < FFT_N; b++){
+    var baseNoise = 0.14 + 0.08 * Math.exp(-b / 18);
+    var p1Base = (ev.baseRms * 0.72) * Math.exp(-Math.pow((b - bin1) / 1.1, 2));
+    var p2Base = (ev.baseRms * 0.24) * Math.exp(-Math.pow((b - bin2) / 1.2, 2));
+    fftBase[b] = baseNoise + p1Base + p2Base;
+
+    var p1Live = p1Base * (sim.fault === 'imbalance' ? 3.2 : 1.0);
+    var p2Live = p2Base * (sim.fault === 'misalign' ? 4.4 : 1.0);
+    var hfLive = (sim.fault === 'bearing' && b > 24 && b < 42) ? (1.65 * Math.sin((b - 24) * 0.55) + Math.random() * 0.45) : 0;
+    fftLive[b] = baseNoise + p1Live + p2Live + Math.max(0, hfLive) + Math.random() * 0.07;
+  }
+
+  // Push sparkline telemetry & refresh UI at 15 Hz
+  sim.chartT += dt;
+  if (sim.chartT >= 0.08){
+    sim.chartT = 0;
+    hist.vib.push(sim.vibRms); hist.cur.push(sim.current);
+    hist.rpm.push(sim.rpm); hist.temp.push(sim.temp);
+    for (var k in hist) if (hist[k].length > SPARK_N) hist[k].shift();
+    updateTab1Hud();
+  }
+
+  sim.screenT += dt;
+  if (sim.screenT >= 0.35){
+    sim.screenT = 0;
+    drawCabinetOled();
+  }
+}
+
+function drawSpark(cv, arr, lo, hi, col){
+  var g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = col; g.lineWidth = 2; g.beginPath();
+  for (var i = 0; i < arr.length; i++){
+    var x = W - (arr.length - 1 - i) / (SPARK_N - 1) * W;
+    var y = H - 3 - clamp((arr[i] - lo) / (hi - lo), 0, 1) * (H - 6);
+    if (i) g.lineTo(x, y); else g.moveTo(x, y);
+  }
+  g.stroke();
+}
+
+function drawFftCanvas(){
+  var cv = $('cvFft'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.fillStyle = '#071018'; g.fillRect(0, 0, W, H);
+
+  // Grid lines
+  g.strokeStyle = '#1B2E3A'; g.lineWidth = 1;
+  for (var gy = 1; gy <= 4; gy++){
+    var y = H - 24 - (gy / 4) * (H - 36);
+    g.beginPath(); g.moveTo(34, y); g.lineTo(W - 10, y); g.stroke();
+  }
+
+  // Learned Healthy Envelope (dashed amber/cyan reference)
+  g.save();
+  g.setLineDash([5, 5]);
+  g.strokeStyle = 'rgba(242,184,75,0.85)'; g.lineWidth = 2;
+  g.beginPath();
+  for (var i = 0; i < FFT_N; i++){
+    var x = 34 + (i / (FFT_N - 1)) * (W - 44);
+    var y = H - 24 - clamp(fftBase[i] / 5.5, 0, 1) * (H - 36);
+    if (i) g.lineTo(x, y); else g.moveTo(x, y);
+  }
+  g.stroke();
+  g.restore();
+
+  // Live FFT Spectrum Curve
+  var col = sim.eval && sim.eval.status === 'CRITICAL' ? '#FF4D4D' : (sim.eval && sim.eval.status === 'WARNING' ? '#F2B84B' : '#00E5C7');
+  g.strokeStyle = col; g.lineWidth = 2.4;
+  g.beginPath();
+  for (var j = 0; j < FFT_N; j++){
+    var x2 = 34 + (j / (FFT_N - 1)) * (W - 44);
+    var y2 = H - 24 - clamp(fftLive[j] / 5.5, 0, 1) * (H - 36);
+    if (j) g.lineTo(x2, y2); else g.moveTo(x2, y2);
+  }
+  g.stroke();
+
+  g.fillStyle = '#83A0AA'; g.font = '12px "IBM Plex Mono", monospace';
+  g.fillText('0 Hz', 34, H - 7);
+  g.fillText('120 Hz', 34 + (W - 44)*0.25, H - 7);
+  g.fillText('240 Hz (Bearing Band)', 34 + (W - 44)*0.5, H - 7);
+  g.fillText('480 Hz', W - 54, H - 7);
+}
+
+function updateTab1Hud(){
+  var ev = sim.eval; if (!ev) return;
+  var col = ev.status === 'CRITICAL' ? 'var(--red)' : (ev.status === 'WARNING' ? 'var(--amber)' : 'var(--cyan)');
+
+  $('vVib').textContent = sim.vibRms.toFixed(2);
+  $('vCur').textContent = sim.current.toFixed(1);
+  $('vRpm').textContent = Math.round(sim.rpm);
+  $('vTemp').textContent = sim.temp.toFixed(1);
+
+  $('ctxStateTag').textContent = ev.status;
+  $('ctxStateTag').style.color = col;
+  var loadLabel = sim.loadPct < 40 ? 'LOW LOAD' : (sim.loadPct > 75 ? 'HIGH LOAD' : 'MED LOAD');
+  $('ctxRegime').textContent = loadLabel + ' · ' + Math.round(sim.rpm) + ' RPM';
+  $('ctxZScore').textContent = ev.zScore.toFixed(2) + ' σ';
+  $('ctxKurt').textContent = sim.kurtosis.toFixed(2);
+  $('ctxHealth').textContent = ev.health.toFixed(1) + ' %';
+  $('ctxHealth').style.color = col;
+  $('ctxBaseRms').textContent = ev.baseRms.toFixed(2) + ' mm/s';
+  $('ctxActRms').textContent = sim.vibRms.toFixed(2) + ' mm/s';
+
+  $('rd1x').textContent = (sim.rpm / 60).toFixed(1) + ' Hz';
+  $('rdPeak').textContent = (sim.vibRms * 1.41).toFixed(2) + ' mm/s';
+  $('rdRul').textContent = ev.rulHours.toLocaleString() + ' hrs (' + ev.rulDays + ' days)';
+
+  // Top global status pill
+  var pill = $('globalPill');
+  pill.className = 'status-pill' + (ev.status === 'CRITICAL' ? ' crit' : (ev.status === 'WARNING' ? ' warn' : ''));
+  $('globalPillText').textContent = ev.status + ' · ' + ev.faultType.toUpperCase();
+
+  var sparkCol = ev.status === 'CRITICAL' ? '#FF4D4D' : (ev.status === 'WARNING' ? '#F2B84B' : '#00E5C7');
+  drawSpark($('skVib'), hist.vib, 0.5, 7.5, sparkCol);
+  drawSpark($('skCur'), hist.cur, 5, 28, '#00E5C7');
+  drawSpark($('skRpm'), hist.rpm, 500, 1900, '#5AC8FA');
+  drawSpark($('skTemp'), hist.temp, 30, 95, '#F2B84B');
+  drawFftCanvas();
+}
+
+function drawCabinetOled(){
+  var g = scr.g, W = 384, H = 240, ev = sim.eval; if (!ev) return;
+  g.fillStyle = '#04121a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#0b1924'; g.fillRect(0, 0, W, 38);
+  g.font = '600 20px monospace'; g.fillStyle = '#00E5C7'; g.fillText('RPI EDGE AI', 14, 26);
+  g.fillStyle = ev.status === 'CRITICAL' ? '#FF4D4D' : (ev.status === 'WARNING' ? '#F2B84B' : '#22D36B');
+  g.beginPath(); g.arc(W - 22, 19, 7, 0, Math.PI*2); g.fill();
+
+  g.font = '500 22px monospace'; g.fillStyle = '#DCEFF2';
+  g.fillText('RMS : ' + sim.vibRms.toFixed(2) + ' mm/s', 14, 72);
+  g.fillText('BASE: ' + ev.baseRms.toFixed(2) + ' mm/s', 14, 104);
+  g.fillText('RPM : ' + Math.round(sim.rpm) + ' (' + sim.current.toFixed(1) + 'A)', 14, 136);
+  g.fillText('TEMP: ' + sim.temp.toFixed(1) + ' C', 14, 168);
+  g.fillStyle = ev.status === 'NORMAL' ? '#22D36B' : '#F2B84B';
+  g.fillText('RPI EDGE: ' + ev.status, 14, 212);
+  scr.tex.needsUpdate = true;
+}
+
+/* ---------- Camera Orbit, Zoom & Walkthrough ---------- */
+function updateCamera(dt){
+  if (tween){
+    tween.t += dt;
+    var k = easeIO(tween.t / tween.dur), f = tween.from, to = tween.to;
+    view.tx = lerp(f.tx, to.tx, k); view.ty = lerp(f.ty, to.ty, k); view.tz = lerp(f.tz, to.tz, k);
+    view.az = lerp(f.az, to.az, k); view.el = lerp(f.el, to.el, k); view.dist = lerp(f.dist, to.dist, k);
+    if (tween.t >= tween.dur) tween = null;
+  }
+  var az = view.az + 0.03 * Math.sin(sim.t * 0.25);
+  var el = clamp(view.el + 0.01 * Math.sin(sim.t * 0.3), deg(4), deg(82));
+  var ce = Math.cos(el);
+  camera.position.set(view.tx + view.dist * Math.sin(az) * ce, Math.max(0.18, view.ty + view.dist * Math.sin(el)), view.tz + view.dist * Math.cos(az) * ce);
+  camera.lookAt(view.tx, view.ty, view.tz);
+}
+
+function stepTour(dt){
+  if (!tour.on) return;
+  if (sim.t - lastUser > 3 && !tween) tour.t += dt;
+  var idx = flatOf(cur.ci, cur.si);
+  $('tourBar').style.width = (((idx + clamp(tour.t / 7, 0, 1)) / FLAT.length) * 100).toFixed(1) + '%';
+  if (tour.t >= 7){
+    if (idx + 1 < FLAT.length) goFlat(idx + 1);
+    else { tour.on = false; $('btnTour').textContent = 'Play tour'; $('tourBar').classList.remove('on'); toast('Walkthrough complete'); }
+  }
+}
+
+$('btnTour').addEventListener('click', function(){
+  tour.on = !tour.on; tour.t = 0;
+  $('btnTour').textContent = tour.on ? 'Stop tour' : 'Play tour';
+  $('tourBar').classList.toggle('on', tour.on);
+  if (tour.on) goShot(0, 0);
+});
+$('btnPrev').addEventListener('click', function(){ goFlat(flatOf(cur.ci, cur.si) - 1); });
+$('btnNext').addEventListener('click', function(){ goFlat(flatOf(cur.ci, cur.si) + 1); });
+$('btnLabels').addEventListener('click', function(){
+  labelsOn = !labelsOn; $('btnLabels').classList.toggle('on', labelsOn);
+});
+$('loadRange').addEventListener('input', function(){
+  sim.loadPct = parseInt(this.value, 10); $('loadOut').textContent = sim.loadPct + '%';
+});
+$('rpmRange').addEventListener('input', function(){
+  sim.rpmTarget = parseInt(this.value, 10); $('rpmOut').textContent = sim.rpmTarget;
+});
+$('faultSel').addEventListener('change', function(){
+  sim.fault = this.value;
+  toast('Fault mode: ' + this.options[this.selectedIndex].text);
+});
+$('btnLearn').addEventListener('click', function(){
+  var rawBase = expectedHealthyRms(sim.rpm, sim.current) - learnedOffset.vib;
+  learnedOffset.vib = sim.vibRms - rawBase;
+  var rawTemp = expectedHealthyTemp(sim.rpm, sim.current) - learnedOffset.temp;
+  learnedOffset.temp = sim.temp - rawTemp;
+  pushEdgeLog('NORMAL', 'Learned new healthy baseline @ ' + Math.round(sim.rpm) + ' RPM / ' + sim.loadPct + '% load');
+  toast('New healthy baseline learned for current operating point');
+});
+
+var ptr = {};
+canvas.addEventListener('pointerdown', function(e){ ptr[e.pointerId] = { x:e.clientX, y:e.clientY }; canvas.classList.add('dragging'); lastUser = sim.t; tween = null; });
+canvas.addEventListener('pointermove', function(e){
+  var p = ptr[e.pointerId]; if (!p) return;
+  view.az -= (e.clientX - p.x) * 0.006;
+  view.el = clamp(view.el + (e.clientY - p.y) * 0.005, deg(4), deg(82));
+  p.x = e.clientX; p.y = e.clientY; lastUser = sim.t;
+});
+function endPtr(e){ delete ptr[e.pointerId]; if (!Object.keys(ptr).length) canvas.classList.remove('dragging'); }
+canvas.addEventListener('pointerup', endPtr); canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', function(e){
+  e.preventDefault(); lastUser = sim.t; tween = null;
+  view.dist = clamp(view.dist * Math.exp(e.deltaY * 0.0012), 1.3, 10);
+}, { passive:false });
+
+/* =====================================================================
+   TAB 2: PERSISTENT DATA STORE, ANALYTICS & REPAIR SCHEDULER
+   ===================================================================== */
+var STORE_KEY = 'motorsense_rpi_records_v1';
+
+function defaultSeedRecords(){
+  var now = Date.now();
+  var seeds = [
+    { ts: now - 86400000*6, rpm: 1480, current: 14.5, vibRms: 2.08, kurtosis: 3.01, temp: 51.5, duty: 16, note: 'Commissioning baseline capture' },
+    { ts: now - 86400000*4, rpm: 1740, current: 21.8, vibRms: 2.78, kurtosis: 3.12, temp: 62.0, duty: 16, note: 'Peak production shift (high load, healthy)' },
+    { ts: now - 86400000*2, rpm: 1480, current: 15.0, vibRms: 2.24, kurtosis: 3.18, temp: 53.2, duty: 16, note: 'Routine automated Raspberry Pi log' },
+    { ts: now - 86400000*1, rpm: 1500, current: 15.4, vibRms: 2.48, kurtosis: 3.38, temp: 55.0, duty: 16, note: 'Slight 1x rotor drift observed' }
+  ];
+  return seeds.map(function(s){
+    var ev = evaluateMotorCondition(s);
+    ev.ts = s.ts; ev.note = s.note;
+    return ev;
+  });
+}
+
+var records = (function(){
+  try {
+    var raw = localStorage.getItem(STORE_KEY);
+    if (raw){
+      var parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch (e){}
+  return defaultSeedRecords();
+})();
+
+function saveRecords(){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(records)); } catch (e){}
+  $('logCountBadge').textContent = records.length;
+  $('tableMeta').textContent = records.length + ' record' + (records.length === 1 ? '' : 's') + ' stored in browser';
+}
+
+function addRecordFromInputs(data, note, silent){
+  var ev = evaluateMotorCondition(data);
+  ev.ts = Date.now();
+  ev.note = note || 'Diagnostic entry';
+  records.unshift(ev);
+  if (records.length > 60) records.pop();
+  saveRecords();
+  renderTab2All(ev);
+  if (!silent) toast('Analyzed & stored record (' + ev.status + ')');
+}
+
+$('btnCaptureTab2').addEventListener('click', function(){
+  addRecordFromInputs({
+    rpm: Math.round(sim.rpm), current: Number(sim.current.toFixed(1)),
+    vibRms: Number(sim.vibRms.toFixed(2)), kurtosis: Number(sim.kurtosis.toFixed(2)),
+    temp: Number(sim.temp.toFixed(1)), duty: 16
+  }, 'Live 3D Twin capture (' + sim.fault + ')');
+});
+
+$('btnSyncLive').addEventListener('click', function(){
+  $('inRpm').value = Math.round(sim.rpm);
+  $('inCurrent').value = sim.current.toFixed(1);
+  $('inVibRms').value = sim.vibRms.toFixed(2);
+  $('inKurtosis').value = sim.kurtosis.toFixed(2);
+  $('inTemp').value = sim.temp.toFixed(1);
+  $('inNote').value = 'Live 3D Twin capture (' + sim.fault + ')';
+  addRecordFromInputs({
+    rpm: Math.round(sim.rpm), current: Number(sim.current.toFixed(1)),
+    vibRms: Number(sim.vibRms.toFixed(2)), kurtosis: Number(sim.kurtosis.toFixed(2)),
+    temp: Number(sim.temp.toFixed(1)), duty: Number($('inDuty').value) || 16
+  }, $('inNote').value);
+});
+
+// Quick-fill preset buttons on Tab 2
+var PRESETS = {
+  heavy_ok:     { rpm:1760, cur:22.4, vib:2.82, kurt:3.14, temp:63.5, note:'Heavy load test — verifying false-alarm immunity' },
+  early_imbal:  { rpm:1500, cur:15.6, vib:4.15, kurt:3.42, temp:61.0, note:'1x spectral peak rising — rotor imbalance check' },
+  bearing_crit: { rpm:1480, cur:16.8, vib:5.90, kurt:7.40, temp:76.5, note:'High-frequency bearing spalling impulse alert' },
+  overheat:     { rpm:1450, cur:18.2, vib:2.95, kurt:3.25, temp:84.0, note:'Blocked cooling shroud / lubrication check' }
+};
+document.querySelectorAll('.preset-btn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var p = PRESETS[this.dataset.preset]; if (!p) return;
+    $('inRpm').value = p.rpm; $('inCurrent').value = p.cur; $('inVibRms').value = p.vib;
+    $('inKurtosis').value = p.kurt; $('inTemp').value = p.temp; $('inNote').value = p.note;
+    var preview = evaluateMotorCondition({ rpm:p.rpm, current:p.cur, vibRms:p.vib, kurtosis:p.kurt, temp:p.temp, duty:Number($('inDuty').value)||16 });
+    renderDiagnosisCard(preview);
+    drawDegradationChart(preview);
+  });
+});
+
+function readFormObj(){
+  return {
+    rpm: Number($('inRpm').value),
+    current: Number($('inCurrent').value),
+    vibRms: Number($('inVibRms').value),
+    kurtosis: Number($('inKurtosis').value),
+    temp: Number($('inTemp').value),
+    duty: Number($('inDuty').value) || 16
+  };
+}
+
+$('inputForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  addRecordFromInputs(readFormObj(), $('inNote').value.trim() || 'Manual entry');
+});
+
+$('btnPreviewOnly').addEventListener('click', function(){
+  var ev = evaluateMotorCondition(readFormObj());
+  renderDiagnosisCard(ev);
+  drawDegradationChart(ev);
+  toast('Preview updated (not saved to log)');
+});
+
+$('btnResetStore').addEventListener('click', function(){
+  records = defaultSeedRecords();
+  saveRecords();
+  renderTab2All();
+  toast('Restored sample historical dataset');
+});
+
+$('btnExportCsv').addEventListener('click', function(){
+  var rows = [['Timestamp','RPM','Current_A','Actual_RMS_mms','Baseline_RMS_mms','Kurtosis','Temp_C','Health_Pct','Status','Fault_Classification','RUL_Hours','Next_Repair_Date','Note']];
+  records.forEach(function(r){
+    rows.push([
+      new Date(r.ts).toISOString(), r.rpm, r.current.toFixed(2), r.vibRms.toFixed(2),
+      r.baseRms.toFixed(2), r.kurtosis.toFixed(2), r.temp.toFixed(1),
+      r.health.toFixed(1), r.status, '"' + r.faultType + '"', r.rulHours, '"' + r.repairDateStr + '"', '"' + (r.note || '') + '"'
+    ]);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'motorsense_raspberry_pi_diagnostics.csv';
+  a.click();
+  toast('Exported ' + records.length + ' records to CSV');
+});
+
+function renderDiagnosisCard(ev){
+  if (!ev) return;
+  var cls = ev.status === 'CRITICAL' ? ' crit' : (ev.status === 'WARNING' ? ' warn' : '');
+
+  $('kpiHealthCard').className = 'kpi-card' + cls;
+  $('kpiHealthVal').textContent = ev.health.toFixed(1) + '% Healthy';
+  $('kpiHealthSub').textContent = 'Status: ' + ev.status + ' · ' + ev.faultType;
+
+  $('kpiRulCard').className = 'kpi-card' + cls;
+  $('kpiRulVal').textContent = ev.rulHours.toLocaleString() + ' hrs';
+  $('kpiRulSub').textContent = '~' + ev.rulDays + ' days at ' + ev.duty + ' hrs/day duty';
+
+  $('kpiDateCard').className = 'kpi-card' + cls;
+  $('kpiDateVal').textContent = ev.repairDateStr;
+  $('kpiDateSub').textContent = ev.status === 'NORMAL' ? 'Routine preventive window' : 'Recommended corrective service';
+
+  $('kpiDevCard').className = 'kpi-card' + cls;
+  var sign = ev.deltaVib >= 0 ? '+' : '';
+  $('kpiDevVal').textContent = sign + ev.deltaVib.toFixed(2) + ' mm/s';
+  $('kpiDevSub').textContent = ev.zScore.toFixed(2) + ' σ from ' + ev.baseRms.toFixed(2) + ' mm/s baseline';
+
+  var badge = $('diagBadge');
+  badge.className = 'badge-st ' + ev.status;
+  badge.textContent = ev.status;
+  $('diagTitle').textContent = ev.faultType;
+  $('diagNextWindow').textContent = 'Next Scheduled Repair: ' + ev.repairDateStr + ' (' + ev.rulDays + 'd)';
+  $('diagSummary').textContent = ev.summary;
+
+  var ul = $('diagReqs'); ul.innerHTML = '';
+  ev.reqs.forEach(function(item){
+    var li = document.createElement('li'); li.innerHTML = item; ul.appendChild(li);
+  });
+}
+
+function drawDegradationChart(activeEv){
+  var cv = $('cvDegrade'), g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.fillStyle = '#071018'; g.fillRect(0, 0, W, H);
+
+  var padL = 48, padR = 20, padT = 18, padB = 28;
+  var pw = W - padL - padR, ph = H - padT - padB;
+  var maxDev = 5.5; // mm/s deviation above baseline
+
+  // Horizontal grid & Critical Threshold (4.5 mm/s)
+  g.strokeStyle = '#1B2E3A'; g.lineWidth = 1;
+  g.font = '11px "IBM Plex Mono", monospace'; g.fillStyle = '#83A0AA';
+  [0, 1.5, 3.0, 4.5].forEach(function(val){
+    var y = padT + ph - (val / maxDev) * ph;
+    g.beginPath(); g.moveTo(padL, y); g.lineTo(W - padR, y); g.stroke();
+    g.fillText('+' + val.toFixed(1), 6, y + 4);
+  });
+
+  // Critical threshold dashed red line at +4.5 mm/s
+  var yCrit = padT + ph - (4.5 / maxDev) * ph;
+  g.save(); g.setLineDash([6, 4]); g.strokeStyle = '#FF4D4D'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(padL, yCrit); g.lineTo(W - padR, yCrit); g.stroke();
+  g.restore();
+
+  // Plot recent stored history on left 45% of chart, and future RUL trajectory on right 55%
+  var histPts = records.slice(0, 8).reverse();
+  if (activeEv && (!histPts.length || histPts[histPts.length - 1] !== activeEv)){
+    histPts.push(activeEv);
+  }
+  var splitX = padL + pw * 0.44;
+
+  // Vertical "NOW" marker
+  g.strokeStyle = 'rgba(0,229,199,0.35)'; g.beginPath(); g.moveTo(splitX, padT); g.lineTo(splitX, padT + ph); g.stroke();
+  g.fillStyle = '#00E5C7'; g.fillText('NOW', splitX - 12, H - 8);
+  g.fillStyle = '#83A0AA'; g.fillText('HISTORICAL LOG', padL + 8, H - 8);
+  g.fillText('PROJECTED DEGRADATION TO REPAIR WINDOW', splitX + 14, H - 8);
+
+  if (histPts.length){
+    g.strokeStyle = '#00E5C7'; g.lineWidth = 2.4; g.beginPath();
+    histPts.forEach(function(pt, i){
+      var x = histPts.length === 1 ? splitX : padL + (i / (histPts.length - 1)) * (splitX - padL);
+      var dev = clamp(Math.max(0, pt.deltaVib), 0, maxDev);
+      var y = padT + ph - (dev / maxDev) * ph;
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    });
+    g.stroke();
+
+    // Projected exponential degradation curve from NOW to RUL threshold
+    var last = histPts[histPts.length - 1];
+    var startDev = clamp(Math.max(0.08, last.deltaVib), 0.08, 4.4);
+    var endX = clamp(splitX + (last.rulDays / 90) * (W - padR - splitX), splitX + 45, W - padR);
+
+    g.save();
+    g.setLineDash([5, 4]);
+    g.strokeStyle = last.status === 'CRITICAL' ? '#FF4D4D' : '#F2B84B';
+    g.lineWidth = 2.2;
+    g.beginPath();
+    for (var s = 0; s <= 24; s++){
+      var t = s / 24;
+      var px = lerp(splitX, endX, t);
+      var pDev = startDev + (4.5 - startDev) * Math.pow(t, 1.65);
+      var py = padT + ph - (clamp(pDev, 0, maxDev) / maxDev) * ph;
+      if (s) g.lineTo(px, py); else g.moveTo(px, py);
+    }
+    g.stroke();
+    g.restore();
+
+    // Target repair marker dot
+    g.fillStyle = '#F2B84B';
+    g.beginPath(); g.arc(endX, yCrit, 5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#F2B84B';
+    g.fillText('Repair: ' + last.repairDateStr, Math.min(endX - 45, W - 155), yCrit - 9);
+  }
+}
+
+function renderLogTable(){
+  var tb = $('logTbody'); tb.innerHTML = '';
+  records.forEach(function(r, idx){
+    var tr = document.createElement('tr');
+    var dtStr = new Date(r.ts).toLocaleString([], { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    var stCol = r.status === 'CRITICAL' ? 'var(--red)' : (r.status === 'WARNING' ? 'var(--amber)' : 'var(--green)');
+    tr.innerHTML =
+      '<td>' + dtStr + '</td>' +
+      '<td>' + r.rpm + '</td>' +
+      '<td>' + r.current.toFixed(1) + ' A</td>' +
+      '<td><b>' + r.vibRms.toFixed(2) + ' mm/s</b></td>' +
+      '<td>' + r.baseRms.toFixed(2) + ' mm/s</td>' +
+      '<td>' + r.kurtosis.toFixed(2) + '</td>' +
+      '<td>' + r.temp.toFixed(1) + ' °C</td>' +
+      '<td>' + r.health.toFixed(0) + '%</td>' +
+      '<td style="color:' + stCol + ';font-weight:600;">' + r.status + '</td>' +
+      '<td>' + r.repairDateStr + '</td>' +
+      '<td><button class="del-btn" data-idx="' + idx + '">Delete</button></td>';
+    tr.addEventListener('click', function(e){
+      if (e.target.classList.contains('del-btn')) return;
+      renderDiagnosisCard(r);
+      drawDegradationChart(r);
+    });
+    tb.appendChild(tr);
+  });
+
+  tb.querySelectorAll('.del-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var i = parseInt(this.dataset.idx, 10);
+      records.splice(i, 1);
+      saveRecords();
+      renderTab2All();
+    });
+  });
+}
+
+function renderTab2All(focusEv){
+  saveRecords();
+  var target = focusEv || records[0] || evaluateMotorCondition(readFormObj());
+  renderDiagnosisCard(target);
+  drawDegradationChart(target);
+  renderLogTable();
+}
+
+/* =====================================================================
+   BOOT & ANIMATION LOOP
+   ===================================================================== */
+function relayout(){
+  resize();
+  updateLabels();
+}
+window.addEventListener('resize', relayout);
+relayout();
+goShot(0, 0, true);
+pushEdgeLog('NORMAL', 'Raspberry Pi 4B/5 booted · ADXL1002 & Hall sensors online');
+saveRecords();
+
+var lastNow = performance.now();
+function animate(now){
+  requestAnimationFrame(animate);
+  var dt = Math.min(0.05, Math.max(0.001, (now - lastNow) / 1000));
+  lastNow = now;
+  stepSimulation(dt);
+  if (activeTab === 1){
+    stepTour(dt);
+    updateCamera(dt);
+    updateLabels();
+    renderer.render(scene, camera);
+  }
+}
+requestAnimationFrame(animate);
+
+})();
+</script>
+</body>
+</html>
